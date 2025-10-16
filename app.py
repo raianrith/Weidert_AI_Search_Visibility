@@ -752,6 +752,7 @@ with tab3:
                                 labels={'x': 'Company', 'y': 'Mention Rate (%)'},
                                 color=mention_rates,
                                 color_continuous_scale='RdYlGn')
+                    st.caption("Higher bars indicate better brand visibility across all queries")
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with col2:
@@ -761,6 +762,7 @@ with tab3:
                                 labels={'x': 'Company', 'y': 'First Third Rate (%)'},
                                 color=first_third_rates,
                                 color_continuous_scale='RdYlGn')
+                    st.caption("Higher rates mean the company appears earlier in responses - stronger brand positioning")
                     st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No results available. Please run queries in Tab 1 first.")
@@ -834,6 +836,7 @@ with tab3:
 # ─── TAB 4: EXECUTIVE DASHBOARD ─────────────────────────────────────────────
 with tab4:
     st.markdown("### 📈 Executive Dashboard")
+    st.caption("High-level overview of Weidert's AI search visibility performance across all LLMs")
     
     dashboard_file = st.file_uploader("Upload results CSV", type="csv", key="dashboard_upload")
     
@@ -869,13 +872,21 @@ with tab4:
         if 'Competitors_Found' not in df_dashboard.columns:
             competitor_analysis = df_dashboard['Response'].apply(extract_competitors_detailed)
             df_dashboard['Competitors_Count'] = [len(c[0]) for c in competitor_analysis]
+            df_dashboard['Competitors_Found'] = [', '.join(c[0]) if c[0] else '' for c in competitor_analysis]
         else:
             df_dashboard['Competitors_Count'] = df_dashboard['Competitors_Found'].apply(
                 lambda x: len(str(x).split(', ')) if x and str(x) != '' else 0
             )
         
+        if 'Weidert_URL_Cited' not in df_dashboard.columns:
+            if 'Sources_Cited' in df_dashboard.columns:
+                df_dashboard['Weidert_URL_Cited'] = df_dashboard['Sources_Cited'].str.contains('weidert.com', case=False, na=False)
+            else:
+                df_dashboard['Weidert_URL_Cited'] = False
+        
         # KPIs
         st.subheader("🎯 Key Performance Indicators")
+        st.caption("Overall percentage of how often Weidert appears and in what context across all queries and LLMs")
         
         col1, col2, col3, col4, col5 = st.columns(5)
         
@@ -935,8 +946,54 @@ with tab4:
         
         st.divider()
         
+        # NEW: Visibility Score
+        st.subheader("⭐ Overall Visibility Score")
+        st.caption("Composite score combining mention rate, positioning, and sentiment - higher is better")
+        
+        # Calculate weighted score (0-100)
+        visibility_score = (
+            (mention_rate * 0.4) +  # 40% weight on mentions
+            (first_position_rate * 0.3) +  # 30% weight on position
+            (positive_context_rate * 0.2) +  # 20% weight on sentiment
+            (nonbranded_mention_rate * 0.1)  # 10% weight on non-branded
+        )
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            # Big score display
+            score_color = "#28a745" if visibility_score >= 70 else "#ffc107" if visibility_score >= 50 else "#dc3545"
+            st.markdown(f"""
+            <div style="background: {score_color}; padding: 2rem; border-radius: 15px; color: white; text-align: center;">
+                <div style="font-size: 4rem; font-weight: bold;">{visibility_score:.0f}</div>
+                <div style="font-size: 1.2rem;">Visibility Score</div>
+                <div style="font-size: 0.9rem; opacity: 0.9; margin-top: 0.5rem;">
+                    {"🔥 Excellent" if visibility_score >= 70 else "👍 Good" if visibility_score >= 50 else "⚠️ Needs Improvement"}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            # Score breakdown
+            score_components = pd.DataFrame({
+                'Metric': ['Mention Rate', 'First Position', 'Positive Context', 'Non-Branded'],
+                'Score': [mention_rate, first_position_rate, positive_context_rate, nonbranded_mention_rate],
+                'Weight': ['40%', '30%', '20%', '10%']
+            })
+            
+            fig = px.bar(score_components, x='Score', y='Metric', orientation='h',
+                        title='Score Components',
+                        labels={'Score': 'Percentage', 'Metric': ''},
+                        color='Score',
+                        color_continuous_scale=['#dc3545', '#ffc107', '#28a745'])
+            fig.update_layout(showlegend=False, height=300)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.divider()
+        
         # Performance by Source
         st.subheader("🏅 Performance by LLM Source")
+        st.caption("Breakdown showing which AI platforms (ChatGPT, Gemini, Perplexity) mention Weidert most often and in what context")
         
         source_performance = df_dashboard.groupby('Source').agg({
             'Weidert_Mentioned': lambda x: (x.sum() / len(x) * 100),
@@ -953,8 +1010,12 @@ with tab4:
         
         fig = make_subplots(
             rows=2, cols=2,
-            subplot_titles=('Mention Rate by Source', 'Position Performance',
-                           'Context Analysis', 'Competitive Landscape')
+            subplot_titles=(
+                'Mention Rate by Source', 
+                'Position Performance',
+                'Context Analysis', 
+                'Competitive Landscape'
+            )
         )
         
         sources = source_performance.index.tolist()
@@ -974,6 +1035,272 @@ with tab4:
         fig.add_trace(
             go.Bar(name='Positive Context', x=sources, y=source_performance['Positive Context (%)'],
                   marker_color='gold'),
+            row=2, col=1
+        )
+        
+        fig.add_trace(
+            go.Bar(name='Avg Competitors', x=sources, y=source_performance['Avg Competitors'],
+                  marker_color='coral'),
+            row=2, col=2
+        )
+        
+        fig.update_layout(height=600, showlegend=False, title_text="")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.divider()
+        
+        # NEW: Query Type Performance
+        st.subheader("🎯 Performance by Query Type")
+        st.caption("Comparing how Weidert performs on branded queries (containing 'Weidert') vs organic/generic queries")
+        
+        query_type_perf = df_dashboard.groupby('Branded_Query').agg({
+            'Weidert_Mentioned': lambda x: (x.sum() / len(x) * 100),
+            'Weidert_Position': lambda x: sum([1 for p in x if p == 'First Third']) / len(x) * 100,
+            'Context_Type': lambda x: sum([1 for c in x if c == 'Positive']) / len(x) * 100,
+        }).round(1)
+        
+        query_type_perf.index = ['Non-Branded (Organic)', 'Branded']
+        query_type_perf.columns = ['Mention Rate (%)', 'First Position (%)', 'Positive Context (%)']
+        
+        fig = px.bar(query_type_perf.T, barmode='group',
+                    title='Branded vs Non-Branded Query Performance',
+                    labels={'value': 'Percentage', 'index': 'Metric'},
+                    color_discrete_sequence=['#e64626', '#ff6b4a'])
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.divider()
+        
+        # NEW: Competitive Landscape
+        st.subheader("🏆 Competitive Landscape")
+        st.caption("Which competitors appear most often alongside or instead of Weidert across all responses")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Most mentioned competitors
+            all_competitors = []
+            for comp_str in df_dashboard['Competitors_Found']:
+                if comp_str and str(comp_str) != '':
+                    all_competitors.extend(str(comp_str).split(', '))
+            
+            if all_competitors:
+                comp_counts = pd.Series(all_competitors).value_counts().head(8)
+                fig = px.bar(x=comp_counts.values, y=comp_counts.index, orientation='h',
+                           title='Most Mentioned Competitors',
+                           labels={'x': 'Number of Mentions', 'y': 'Competitor'},
+                           color=comp_counts.values,
+                           color_continuous_scale='Reds')
+                fig.update_layout(showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No competitor mentions found in responses")
+        
+        with col2:
+            # Co-mention analysis
+            weidert_responses = df_dashboard[df_dashboard['Weidert_Mentioned']]
+            competitors_with_weidert = []
+            
+            for comp_str in weidert_responses['Competitors_Found']:
+                if comp_str and str(comp_str) != '':
+                    competitors_with_weidert.extend(str(comp_str).split(', '))
+            
+            if competitors_with_weidert:
+                co_mention_counts = pd.Series(competitors_with_weidert).value_counts().head(8)
+                fig = px.bar(x=co_mention_counts.values, y=co_mention_counts.index, orientation='h',
+                           title='Competitors Co-Mentioned with Weidert',
+                           labels={'x': 'Co-Mentions', 'y': 'Competitor'},
+                           color=co_mention_counts.values,
+                           color_continuous_scale='Oranges')
+                fig.update_layout(showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Weidert appears alone (no competitor co-mentions)")
+        
+        st.divider()
+        
+        # NEW: URL Citation Analysis
+        st.subheader("🔗 Website Citation Performance")
+        st.caption("How often LLMs include a link to weidert.com in their responses - direct traffic opportunity")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        url_citation_rate = (df_dashboard['Weidert_URL_Cited'].sum() / len(df_dashboard) * 100)
+        url_when_mentioned = weidert_responses['Weidert_URL_Cited'].sum() / len(weidert_responses) * 100 if len(weidert_responses) > 0 else 0
+        
+        with col1:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; font-weight: bold;">{url_citation_rate:.1f}%</div>
+                <div style="font-size: 0.9rem;">Overall URL Citation Rate</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #138496 0%, #0f6674 100%); padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; font-weight: bold;">{url_when_mentioned:.1f}%</div>
+                <div style="font-size: 0.9rem;">Citation When Mentioned</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            # Citation by source
+            citation_by_source = df_dashboard.groupby('Source')['Weidert_URL_Cited'].apply(
+                lambda x: (x.sum() / len(x) * 100)
+            ).round(1)
+            
+            best_source = citation_by_source.idxmax() if len(citation_by_source) > 0 else "N/A"
+            best_rate = citation_by_source.max() if len(citation_by_source) > 0 else 0
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #0f6674 0%, #0a4d56 100%); padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 1.8rem; font-weight: bold;">{best_source}</div>
+                <div style="font-size: 0.9rem;">Best for Citations ({best_rate:.1f}%)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Citation rate by source chart
+        if len(citation_by_source) > 0:
+            fig = px.bar(x=citation_by_source.index, y=citation_by_source.values,
+                        title='URL Citation Rate by Source',
+                        labels={'x': 'Source', 'y': 'Citation Rate (%)'},
+                        color=citation_by_source.values,
+                        color_continuous_scale='Teal')
+            fig.update_layout(showlegend=False, height=300)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.divider()
+        
+        # Recommendations
+        st.subheader("💡 Actionable Recommendations")
+        st.caption("AI-generated strategic recommendations based on current performance metrics")
+        
+        recommendations = []
+        
+        if mention_rate < 50:
+            recommendations.append({
+                'icon': '🔴',
+                'priority': 'CRITICAL',
+                'action': 'Overall mention rate is below 50%',
+                'recommendation': 'Increase thought leadership content, case studies, and SEO optimization to improve brand visibility across all LLM platforms.'
+            })
+        
+        if first_position_rate < 30:
+            recommendations.append({
+                'icon': '🟡',
+                'priority': 'HIGH',
+                'action': 'Low first-position rate indicates late mentions',
+                'recommendation': 'Create more foundational content that establishes Weidert as a primary authority in B2B industrial marketing.'
+            })
+        
+        if positive_context_rate < 60:
+            recommendations.append({
+                'icon': '🟡',
+                'priority': 'MEDIUM',
+                'action': 'Context sentiment needs improvement',
+                'recommendation': 'Focus on client success stories, testimonials, and thought leadership to improve sentiment in LLM responses.'
+            })
+        
+        if nonbranded_mention_rate < 20:
+            recommendations.append({
+                'icon': '🔴',
+                'priority': 'CRITICAL',
+                'action': 'Very low non-branded (organic) mentions',
+                'recommendation': 'This is a major SEO/content gap. Create industry-specific content without focusing on brand name to capture organic search visibility.'
+            })
+        
+        if url_citation_rate < 30:
+            recommendations.append({
+                'icon': '🟡',
+                'priority': 'MEDIUM',
+                'action': 'Low website citation rate',
+                'recommendation': 'Optimize website structure, create linkable resources (guides, tools, calculators), and increase domain authority.'
+            })
+        
+        if avg_competitors > 3:
+            recommendations.append({
+                'icon': '🟢',
+                'priority': 'MONITOR',
+                'action': 'High competitor density in responses',
+                'recommendation': 'While competitive, this shows you\'re in the consideration set. Focus on differentiation messaging.'
+            })
+        
+        if visibility_score >= 70:
+            recommendations.append({
+                'icon': '🟢',
+                'priority': 'EXCELLENT',
+                'action': 'Strong overall visibility performance',
+                'recommendation': 'Maintain current strategies and continue monitoring. Consider expanding into adjacent market segments.'
+            })
+        
+        if not recommendations:
+            recommendations.append({
+                'icon': '🟢',
+                'priority': 'GOOD',
+                'action': 'Performance is balanced across metrics',
+                'recommendation': 'Continue current strategies while monitoring for changes. Run monthly analyses to track trends.'
+            })
+        
+        for rec in recommendations:
+            priority_colors = {
+                'CRITICAL': '#dc3545',
+                'HIGH': '#ff6b4a',
+                'MEDIUM': '#ffc107',
+                'MONITOR': '#17a2b8',
+                'GOOD': '#28a745',
+                'EXCELLENT': '#20c997'
+            }
+            color = priority_colors.get(rec['priority'], '#6c757d')
+            
+            st.markdown(f"""
+            <div style="border-left: 5px solid {color}; padding: 1rem; margin: 0.75rem 0; background: #f8f9fa; border-radius: 5px;">
+                <div style="font-weight: bold; margin-bottom: 0.5rem; font-size: 1.1rem;">
+                    {rec['icon']} {rec['priority']}: {rec['action']}
+                </div>
+                <div style="color: #495057; font-size: 0.95rem; line-height: 1.5;">
+                    <strong>Recommendation:</strong> {rec['recommendation']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # NEW: Executive Summary
+        st.subheader("📊 Executive Summary")
+        st.caption("One-page overview suitable for stakeholder presentations")
+        
+        summary_col1, summary_col2 = st.columns(2)
+        
+        with summary_col1:
+            st.markdown("**Key Findings:**")
+            st.markdown(f"""
+            - Analyzed **{total_queries}** queries across **{len(df_dashboard['Source'].unique())}** LLM platforms
+            - Weidert mentioned in **{mention_rate:.1f}%** of all responses
+            - **{first_position_rate:.1f}%** of mentions appear in first third (early positioning)
+            - **{positive_context_rate:.1f}%** of mentions have positive sentiment
+            - Non-branded mention rate: **{nonbranded_mention_rate:.1f}%** (organic visibility)
+            - Average **{avg_competitors:.1f}** competitors per response
+            """)
+        
+        with summary_col2:
+            st.markdown("**Top Opportunities:**")
+            top_opps = [r for r in recommendations if r['priority'] in ['CRITICAL', 'HIGH']][:3]
+            if top_opps:
+                for opp in top_opps:
+                    st.markdown(f"• {opp['action']}")
+            else:
+                st.markdown("• Continue current high-performing strategies")
+                st.markdown("• Monitor for competitive changes")
+                st.markdown("• Explore adjacent market opportunities")
+        
+        # Download dashboard summary
+        st.download_button(
+            "📥 Download Dashboard Summary (CSV)",
+            df_dashboard.to_csv(index=False),
+            "weidert_executive_dashboard.csv",
+            "text/csv",
+            help="Download complete dashboard data for further analysis"
+        )  marker_color='gold'),
             row=2, col=1
         )
         
@@ -1104,6 +1431,7 @@ with tab5:
                 fig = px.pie(values=gap_by_source.values, names=gap_by_source.index,
                            title="Critical Gaps by LLM Source",
                            color_discrete_sequence=['#dc3545', '#c82333', '#bd2130'])
+                st.caption("Which LLM platforms have the most gaps where competitors appear but Weidert doesn't")
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
@@ -1119,6 +1447,7 @@ with tab5:
                                title="Competitors Appearing in Gaps",
                                labels={'x': 'Mentions', 'y': 'Competitor'},
                                color_discrete_sequence=['#dc3545'])
+                    st.caption("These competitors are winning visibility where Weidert should be mentioned")
                     st.plotly_chart(fig, use_container_width=True)
             
             # Side-by-side query comparison
@@ -1231,6 +1560,7 @@ with tab5:
                            title="Success Stories by LLM Source",
                            labels={'x': 'Source', 'y': 'Count'},
                            color_discrete_sequence=['#28a745'])
+                st.caption("Queries where Weidert appears alone without competitor mentions - clear brand leadership")
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
@@ -1243,6 +1573,7 @@ with tab5:
                 fig = px.pie(values=position_dist.values, names=position_dist.index,
                            title="Weidert Position in Success Stories",
                            color_discrete_sequence=['#28a745', '#20c997', '#17a2b8'])
+                st.caption("In success stories, where does Weidert typically appear in the response?")
                 st.plotly_chart(fig, use_container_width=True)
             
             # Show example success queries
@@ -1274,6 +1605,7 @@ with tab5:
                            title="Weidert's Position in Competitive Responses",
                            labels={'x': 'Position', 'y': 'Count'},
                            color_discrete_sequence=['#ffc107'])
+                st.caption("When competing with other agencies, where does Weidert typically appear?")
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
