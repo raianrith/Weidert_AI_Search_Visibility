@@ -1,0 +1,14 @@
+streamlit
+openai
+google-generativeai
+pandas
+matplotlib
+nltk
+seaborn
+gspread
+oauth2client
+gspread-dataframe
+python-dotenv
+plotly
+numpy
+pyyaml
