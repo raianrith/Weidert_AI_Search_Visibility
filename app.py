@@ -1045,6 +1045,17 @@ with tab4:
         )
         
         fig.update_layout(height=600, showlegend=False, title_text="")
+        st.plotly_chart(fig, use_container_width=True)  marker_color='gold'),
+            row=2, col=1
+        )
+        
+        fig.add_trace(
+            go.Bar(name='Avg Competitors', x=sources, y=source_performance['Avg Competitors'],
+                  marker_color='coral'),
+            row=2, col=2
+        )
+        
+        fig.update_layout(height=600, showlegend=False, title_text="")
         st.plotly_chart(fig, use_container_width=True)
         
         st.divider()
