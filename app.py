@@ -1045,30 +1045,7 @@ with tab4:
         )
         
         fig.update_layout(height=600, showlegend=False, title_text="")
-        st.plotly_chart(fig, use_container_width=True)  marker_color='gold'),
-            row=2, col=1
-        )
-        
-        fig.add_trace(
-            go.Bar(name='Avg Competitors', x=sources, y=source_performance['Avg Competitors'],
-                  marker_color='coral'),
-            row=2, col=2
-        )
-        
-        fig.update_layout(height=600, showlegend=False, title_text="")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.divider()
-        
-        # NEW: Query Type Performance
-        st.subheader("🎯 Performance by Query Type")
-        st.caption("Comparing how Weidert performs on branded queries (containing 'Weidert') vs organic/generic queries")
-        
-        query_type_perf = df_dashboard.groupby('Branded_Query').agg({
-            'Weidert_Mentioned': lambda x: (x.sum() / len(x) * 100),
-            'Weidert_Position': lambda x: sum([1 for p in x if p == 'First Third']) / len(x) * 100,
-            'Context_Type': lambda x: sum([1 for c in x if c == 'Positive']) / len(x) * 100,
-        }).round(1)
+       
         
         query_type_perf.index = ['Non-Branded (Organic)', 'Branded']
         query_type_perf.columns = ['Mention Rate (%)', 'First Position (%)', 'Positive Context (%)']
