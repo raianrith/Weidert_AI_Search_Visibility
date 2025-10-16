@@ -437,11 +437,12 @@ def process_queries_parallel(queries):
     return results
 
 # ─── MAIN APPLICATION TABS ─────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Multi-LLM Response Generator", 
     "Search Visibility Analysis", 
     "Competitor Comparison", 
-    "Executive Dashboard"
+    "Executive Dashboard",
+    "Gap Analysis & Opportunities"
 ])
 
 # ─── TAB 1: MULTI-LLM GENERATOR ─────────────────────────────────────────────
@@ -1010,6 +1011,384 @@ with tab4:
         
         for rec in recommendations:
             st.markdown(rec)
+
+# ─── TAB 5: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
+with tab5:
+    st.markdown("### 🎯 Gap Analysis & Improvement Opportunities")
+    st.caption("Side-by-side comparison highlighting where Weidert needs to improve visibility")
+    
+    gap_file = st.file_uploader("Upload results CSV", type="csv", key="gap_upload")
+    
+    df_gap = None
+    
+    if 'latest_results' in st.session_state:
+        use_latest_gap = st.checkbox("Use results from Multi-LLM Generator", value=True, key="gap_use_latest")
+        if use_latest_gap:
+            df_gap = st.session_state.latest_results.copy()
+    
+    if gap_file and df_gap is None:
+        df_gap = pd.read_csv(gap_file)
+    
+    if df_gap is not None:
+        # Ensure necessary columns
+        if 'Weidert_Mentioned' not in df_gap.columns:
+            df_gap['Weidert_Mentioned'] = df_gap['Response'].apply(
+                lambda x: 'weidert' in str(x).lower() and not str(x).startswith("ERROR")
+            )
+        
+        if 'Competitors_Found' not in df_gap.columns:
+            competitor_analysis = df_gap['Response'].apply(extract_competitors_detailed)
+            df_gap['Competitors_Found'] = [', '.join(c[0]) if c[0] else '' for c in competitor_analysis]
+        
+        df_gap['Has_Competitors'] = df_gap['Competitors_Found'].apply(lambda x: len(str(x)) > 0 and str(x) != '')
+        
+        # Create analysis categories
+        st.subheader("📊 Response Categories")
+        
+        # Calculate categories
+        weidert_only = df_gap[df_gap['Weidert_Mentioned'] & ~df_gap['Has_Competitors']]
+        competitors_only = df_gap[~df_gap['Weidert_Mentioned'] & df_gap['Has_Competitors']]
+        both_mentioned = df_gap[df_gap['Weidert_Mentioned'] & df_gap['Has_Competitors']]
+        neither_mentioned = df_gap[~df_gap['Weidert_Mentioned'] & ~df_gap['Has_Competitors']]
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(weidert_only)}</div>
+                <div style="font-size: 0.9rem;">✅ Weidert Only</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">No competitors mentioned</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(competitors_only)}</div>
+                <div style="font-size: 0.9rem;">⚠️ Competitors Only</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Weidert NOT mentioned</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(both_mentioned)}</div>
+                <div style="font-size: 0.9rem;">🤝 Both Mentioned</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Weidert + competitors</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(neither_mentioned)}</div>
+                <div style="font-size: 0.9rem;">❌ Neither</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Generic responses</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # CRITICAL: Competitors mentioned but NOT Weidert
+        st.subheader("🚨 CRITICAL GAPS: Competitors Mentioned, Weidert Missing")
+        st.caption("These are the highest priority opportunities - Weidert should be mentioned here but isn't")
+        
+        if len(competitors_only) > 0:
+            # Show distribution by source
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                gap_by_source = competitors_only.groupby('Source').size()
+                fig = px.pie(values=gap_by_source.values, names=gap_by_source.index,
+                           title="Critical Gaps by LLM Source",
+                           color_discrete_sequence=['#dc3545', '#c82333', '#bd2130'])
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Most common competitors in these gaps
+                all_comp_mentions = []
+                for comp_str in competitors_only['Competitors_Found']:
+                    if comp_str and str(comp_str) != '':
+                        all_comp_mentions.extend(str(comp_str).split(', '))
+                
+                if all_comp_mentions:
+                    comp_counts = pd.Series(all_comp_mentions).value_counts().head(5)
+                    fig = px.bar(x=comp_counts.values, y=comp_counts.index, orientation='h',
+                               title="Competitors Appearing in Gaps",
+                               labels={'x': 'Mentions', 'y': 'Competitor'},
+                               color_discrete_sequence=['#dc3545'])
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            # Side-by-side query comparison
+            st.markdown("---")
+            st.markdown("### 📋 Detailed Gap Analysis: Query-by-Query Breakdown")
+            
+            # Group by query to show all LLM responses together
+            gap_queries = competitors_only['Query'].unique()
+            
+            for query in gap_queries[:10]:  # Show first 10 critical gaps
+                query_responses = df_gap[df_gap['Query'] == query]
+                
+                # Check if ANY response mentions Weidert
+                weidert_mentioned_anywhere = query_responses['Weidert_Mentioned'].any()
+                
+                with st.expander(f"🔍 Query: {query[:100]}{'...' if len(query) > 100 else ''}", expanded=False):
+                    # Show query details
+                    st.markdown(f"**Full Query:** {query}")
+                    
+                    if weidert_mentioned_anywhere:
+                        st.info("ℹ️ Weidert IS mentioned by at least one LLM - opportunity to improve consistency")
+                    else:
+                        st.error("⚠️ Weidert NOT mentioned by ANY LLM - critical visibility gap!")
+                    
+                    st.markdown("---")
+                    
+                    # Create columns for side-by-side comparison
+                    sources = query_responses['Source'].unique()
+                    cols = st.columns(min(len(sources), 3))
+                    
+                    for idx, (_, row) in enumerate(query_responses.iterrows()):
+                        col_idx = idx % 3
+                        
+                        with cols[col_idx]:
+                            # Header with status indicator
+                            weidert_in_response = row['Weidert_Mentioned']
+                            competitors_in_response = row['Has_Competitors']
+                            
+                            if weidert_in_response and competitors_in_response:
+                                status = "🟢 Good"
+                                color = "#28a745"
+                            elif weidert_in_response:
+                                status = "🟡 OK"
+                                color = "#ffc107"
+                            elif competitors_in_response:
+                                status = "🔴 Gap"
+                                color = "#dc3545"
+                            else:
+                                status = "⚪ Generic"
+                                color = "#6c757d"
+                            
+                            st.markdown(f"""
+                            <div style="background: {color}; padding: 0.5rem; border-radius: 5px; margin-bottom: 0.5rem;">
+                                <strong style="color: white;">{row['Source']}</strong>
+                                <span style="color: white; float: right;">{status}</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Show response with highlighting
+                            response_text = str(row['Response'])
+                            
+                            # Truncate if too long
+                            if len(response_text) > 500:
+                                response_text = response_text[:500] + "..."
+                            
+                            # Highlight competitors
+                            highlighted_text = response_text
+                            if competitors_in_response:
+                                competitors_list = str(row['Competitors_Found']).split(', ')
+                                for comp in competitors_list:
+                                    if comp and comp != '':
+                                        highlighted_text = re.sub(
+                                            f'({re.escape(comp)})',
+                                            r'**\1**',
+                                            highlighted_text,
+                                            flags=re.IGNORECASE
+                                        )
+                            
+                            st.markdown(highlighted_text)
+                            
+                            # Show what's mentioned
+                            if competitors_in_response:
+                                st.markdown(f"**Competitors:** {row['Competitors_Found']}")
+                            
+                            if weidert_in_response:
+                                st.markdown("✅ **Weidert mentioned**")
+                            else:
+                                st.markdown("❌ **Weidert NOT mentioned**")
+                            
+                            st.markdown("---")
+            
+            if len(gap_queries) > 10:
+                st.info(f"Showing 10 of {len(gap_queries)} critical gaps. Download full data for complete analysis.")
+        
+        else:
+            st.success("🎉 Great news! No critical gaps found - Weidert appears whenever competitors do!")
+        
+        st.divider()
+        
+        # Where Weidert IS winning
+        st.subheader("🏆 SUCCESS STORIES: Weidert Mentioned, Competitors Not")
+        st.caption("These queries show where Weidert has strong visibility advantage")
+        
+        if len(weidert_only) > 0:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                success_by_source = weidert_only.groupby('Source').size()
+                fig = px.bar(x=success_by_source.index, y=success_by_source.values,
+                           title="Success Stories by LLM Source",
+                           labels={'x': 'Source', 'y': 'Count'},
+                           color_discrete_sequence=['#28a745'])
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Position analysis for these wins
+                if 'Weidert_Position' not in weidert_only.columns:
+                    position_analysis = weidert_only['Response'].apply(lambda x: analyze_position(x, "Weidert"))
+                    weidert_only['Weidert_Position'] = [p[0] for p in position_analysis]
+                
+                position_dist = weidert_only['Weidert_Position'].value_counts()
+                fig = px.pie(values=position_dist.values, names=position_dist.index,
+                           title="Weidert Position in Success Stories",
+                           color_discrete_sequence=['#28a745', '#20c997', '#17a2b8'])
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Show example success queries
+            st.markdown("**Example Success Queries:**")
+            for i, query in enumerate(weidert_only['Query'].unique()[:5], 1):
+                st.markdown(f"{i}. {query}")
+        
+        else:
+            st.info("No queries where Weidert is the only agency mentioned.")
+        
+        st.divider()
+        
+        # Competitive battlegrounds
+        st.subheader("⚔️ COMPETITIVE BATTLEGROUNDS: Both Mentioned")
+        st.caption("Queries where Weidert competes directly with other agencies")
+        
+        if len(both_mentioned) > 0:
+            # Position comparison in competitive scenarios
+            if 'Weidert_Position' not in both_mentioned.columns:
+                position_analysis = both_mentioned['Response'].apply(lambda x: analyze_position(x, "Weidert"))
+                both_mentioned['Weidert_Position'] = [p[0] for p in position_analysis]
+                both_mentioned['Weidert_Sentence_Num'] = [p[1] for p in position_analysis]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                position_in_competitive = both_mentioned['Weidert_Position'].value_counts()
+                fig = px.bar(x=position_in_competitive.index, y=position_in_competitive.values,
+                           title="Weidert's Position in Competitive Responses",
+                           labels={'x': 'Position', 'y': 'Count'},
+                           color_discrete_sequence=['#ffc107'])
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Average sentence position vs competitors
+                avg_weidert_position = both_mentioned['Weidert_Sentence_Num'].mean()
+                
+                st.markdown(f"""
+                <div style="background: #ffc107; padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: bold;">{avg_weidert_position:.1f}</div>
+                    <div style="font-size: 0.9rem;">Avg Sentence Position</div>
+                    <div style="font-size: 0.8rem; opacity: 0.9;">Lower is better</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("")
+                st.markdown("**Interpretation:**")
+                if avg_weidert_position <= 3:
+                    st.success("✅ Excellent - Weidert appears early in responses")
+                elif avg_weidert_position <= 5:
+                    st.info("🟡 Good - Weidert appears in first half of responses")
+                else:
+                    st.warning("⚠️ Opportunity - Weidert appears late in responses")
+            
+            # Show which competitors Weidert is fighting against
+            st.markdown("**Most Frequent Competitors in Battlegrounds:**")
+            all_battle_comps = []
+            for comp_str in both_mentioned['Competitors_Found']:
+                if comp_str and str(comp_str) != '':
+                    all_battle_comps.extend(str(comp_str).split(', '))
+            
+            if all_battle_comps:
+                comp_battle_counts = pd.Series(all_battle_comps).value_counts().head(5)
+                for comp, count in comp_battle_counts.items():
+                    st.markdown(f"• **{comp}**: {count} co-mentions")
+        
+        else:
+            st.info("No queries where both Weidert and competitors are mentioned together.")
+        
+        st.divider()
+        
+        # Action Items
+        st.subheader("🎯 Recommended Actions")
+        st.caption("Based on the gap analysis, here's what Weidert should focus on")
+        
+        actions = []
+        
+        if len(competitors_only) > 0:
+            gap_rate = (len(competitors_only) / len(df_gap) * 100)
+            actions.append({
+                'priority': '🔴 HIGH',
+                'action': f'Address {len(competitors_only)} critical visibility gaps ({gap_rate:.1f}% of queries)',
+                'detail': f'Create content targeting these queries where competitors appear but Weidert doesn\'t'
+            })
+            
+            # Find most common competitors in gaps
+            if all_comp_mentions:
+                top_gap_comp = pd.Series(all_comp_mentions).value_counts().index[0]
+                actions.append({
+                    'priority': '🔴 HIGH',
+                    'action': f'Competitive positioning against {top_gap_comp}',
+                    'detail': f'{top_gap_comp} appears most often in gaps - create comparison content'
+                })
+        
+        if len(both_mentioned) > 0 and avg_weidert_position > 5:
+            actions.append({
+                'priority': '🟡 MEDIUM',
+                'action': 'Improve early mention positioning',
+                'detail': 'Weidert appears late in competitive responses - strengthen thought leadership'
+            })
+        
+        if len(weidert_only) > 0:
+            success_rate = (len(weidert_only) / len(df_gap) * 100)
+            actions.append({
+                'priority': '🟢 MAINTAIN',
+                'action': f'Protect {len(weidert_only)} success stories ({success_rate:.1f}% of queries)',
+                'detail': 'Continue reinforcing content in areas where Weidert has exclusive visibility'
+            })
+        
+        if not actions:
+            actions.append({
+                'priority': '🟢 GOOD',
+                'action': 'Maintain current visibility levels',
+                'detail': 'Performance is strong - monitor for changes and continue current strategies'
+            })
+        
+        for action in actions:
+            st.markdown(f"""
+            <div style="border-left: 4px solid {'#dc3545' if 'HIGH' in action['priority'] else '#ffc107' if 'MEDIUM' in action['priority'] else '#28a745'}; 
+                        padding: 1rem; margin: 0.5rem 0; background: #f8f9fa; border-radius: 5px;">
+                <div style="font-weight: bold; margin-bottom: 0.5rem;">{action['priority']} {action['action']}</div>
+                <div style="color: #666;">{action['detail']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Download gap analysis
+        st.divider()
+        st.subheader("📥 Export Gap Analysis")
+        
+        # Create detailed export
+        export_data = df_gap.copy()
+        export_data['Category'] = 'Neither'
+        export_data.loc[export_data['Weidert_Mentioned'] & ~export_data['Has_Competitors'], 'Category'] = 'Weidert Only'
+        export_data.loc[~export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Category'] = 'Competitors Only (CRITICAL GAP)'
+        export_data.loc[export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Category'] = 'Both Mentioned'
+        
+        st.download_button(
+            "📥 Download Full Gap Analysis CSV",
+            export_data.to_csv(index=False),
+            "weidert_gap_analysis.csv",
+            "text/csv",
+            help="Download complete gap analysis with all responses categorized"
+        )
+    
+    else:
+        st.info("Please run queries in Tab 1 or upload a CSV file to perform gap analysis.")
 
 # ─── FOOTER ─────────────────────────────────────────────────────────────────
 st.markdown("---")
