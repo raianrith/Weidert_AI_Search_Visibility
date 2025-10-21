@@ -573,9 +573,183 @@ with tab1:
             display_cols = ['Query', 'Source', 'Response', 'Response_Time', 'Weidert_Position', 'Context_Type']
             st.dataframe(df[display_cols], use_container_width=True, height=400)
             
-            # Download
+            st.divider()
+            
+            # NEW SECTION: Queries where Weidert was NOT mentioned
+            st.subheader("⚠️ Queries Without Weidert Mentions")
+            st.caption("Critical visibility gaps - queries where Weidert Group was not mentioned by LLMs")
+            
+            # Filter for responses where Weidert was NOT mentioned
+            negative_results = df[~df['Weidert_Mentioned']].copy()
+            
+            if len(negative_results) > 0:
+                # Summary metrics
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    negative_count = len(negative_results)
+                    negative_pct = (negative_count / len(df) * 100)
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); 
+                                padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold;">{negative_count}</div>
+                        <div style="font-size: 0.9rem;">Responses Without Weidert</div>
+                        <div style="font-size: 0.8rem; opacity: 0.9;">({negative_pct:.1f}% of total)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    # Count unique queries where Weidert wasn't mentioned
+                    unique_queries_missing = negative_results['Query'].nunique()
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #ff6b4a 0%, #ff5733 100%); 
+                                padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold;">{unique_queries_missing}</div>
+                        <div style="font-size: 0.9rem;">Unique Queries Affected</div>
+                        <div style="font-size: 0.8rem; opacity: 0.9;">Need attention</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    # Count responses with competitors but no Weidert
+                    has_competitors = negative_results['Competitors_Found'].apply(lambda x: len(str(x)) > 0 and str(x) != '')
+                    competitor_gaps = has_competitors.sum()
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); 
+                                padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold;">{competitor_gaps}</div>
+                        <div style="font-size: 0.9rem;">Competitor Gaps</div>
+                        <div style="font-size: 0.8rem; opacity: 0.9;">Competitors mentioned instead</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("---")
+                
+                # Group by query to show all LLM responses together
+                st.markdown("### 🔍 Detailed Breakdown by Query")
+                
+                unique_queries = negative_results['Query'].unique()
+                
+                for query_idx, query in enumerate(unique_queries, 1):
+                    # Get all responses for this query
+                    query_data = df[df['Query'] == query]
+                    query_negatives = query_data[~query_data['Weidert_Mentioned']]
+                    
+                    # Check if ANY LLM mentioned Weidert for this query
+                    any_mentioned = query_data['Weidert_Mentioned'].any()
+                    
+                    # Status indicator
+                    if any_mentioned:
+                        status_color = "#ffc107"
+                        status_icon = "🟡"
+                        status_text = "Partial Coverage"
+                    else:
+                        status_color = "#dc3545"
+                        status_icon = "🔴"
+                        status_text = "Complete Gap"
+                    
+                    with st.expander(f"{status_icon} Query {query_idx}: {query[:80]}{'...' if len(query) > 80 else ''}", expanded=False):
+                        # Show full query
+                        st.markdown(f"**Full Query:** {query}")
+                        
+                        # Status message
+                        if any_mentioned:
+                            mentioned_by = query_data[query_data['Weidert_Mentioned']]['Source'].tolist()
+                            st.info(f"ℹ️ Weidert IS mentioned by: {', '.join(mentioned_by)}. Missing from: {', '.join(query_negatives['Source'].tolist())}")
+                        else:
+                            st.error("⚠️ **CRITICAL**: Weidert NOT mentioned by ANY LLM for this query!")
+                        
+                        st.markdown("---")
+                        
+                        # Show responses in columns
+                        cols = st.columns(min(len(query_negatives), 3))
+                        
+                        for idx, (_, row) in enumerate(query_negatives.iterrows()):
+                            col_idx = idx % 3
+                            
+                            with cols[col_idx]:
+                                # Header
+                                st.markdown(f"""
+                                <div style="background: {status_color}; padding: 0.5rem; 
+                                           border-radius: 5px; margin-bottom: 0.5rem;">
+                                    <strong style="color: white;">{row['Source']}</strong>
+                                    <span style="color: white; float: right;">❌ No Mention</span>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Response text
+                                response_text = str(row['Response'])
+                                if len(response_text) > 500:
+                                    response_text = response_text[:500] + "..."
+                                
+                                st.markdown(response_text)
+                                
+                                # Show competitors if mentioned
+                                if row['Competitors_Found'] and str(row['Competitors_Found']) != '':
+                                    st.warning(f"**Competitors mentioned:** {row['Competitors_Found']}")
+                                else:
+                                    st.info("No competitors mentioned either")
+                                
+                                # Response time
+                                st.caption(f"⏱️ Response time: {row['Response_Time']}s")
+                                
+                                st.markdown("---")
+                
+                # Breakdown by LLM Source
+                st.markdown("### 📊 Missing Mentions by LLM Source")
+                
+                source_breakdown = negative_results.groupby('Source').size().reset_index(name='Count')
+                source_breakdown['Percentage'] = (source_breakdown['Count'] / len(df) * 100).round(1)
+                
+                fig = px.bar(source_breakdown, x='Source', y='Count',
+                           title='Number of Queries Without Weidert Mention by LLM',
+                           labels={'Count': 'Number of Responses', 'Source': 'LLM Source'},
+                           color='Count',
+                           color_continuous_scale='Reds',
+                           text='Count')
+                fig.update_traces(textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Most common competitors in negative results
+                st.markdown("### 🏆 Competitors Mentioned Instead of Weidert")
+                
+                all_competitors_in_gaps = []
+                for comp_str in negative_results['Competitors_Found']:
+                    if comp_str and str(comp_str) != '':
+                        all_competitors_in_gaps.extend(str(comp_str).split(', '))
+                
+                if all_competitors_in_gaps:
+                    comp_counts = pd.Series(all_competitors_in_gaps).value_counts().head(8)
+                    
+                    fig = px.bar(x=comp_counts.index, y=comp_counts.values,
+                               title='Competitors Appearing Where Weidert Doesn\'t',
+                               labels={'x': 'Competitor', 'y': 'Number of Mentions'},
+                               color=comp_counts.values,
+                               color_continuous_scale='Oranges')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.caption("💡 **Action Item**: Focus content strategy on competing with these brands for visibility")
+                else:
+                    st.info("ℹ️ No competitors were mentioned in these responses either - generic/educational content only")
+                
+                # Download negative results
+                st.markdown("### 📥 Export Negative Results")
+                st.download_button(
+                    "📥 Download Queries Without Weidert Mentions (CSV)",
+                    negative_results.to_csv(index=False),
+                    "weidert_negative_results.csv",
+                    "text/csv",
+                    help="Download all queries where Weidert was not mentioned for detailed analysis"
+                )
+                
+            else:
+                st.success("🎉 **Excellent!** Weidert Group was mentioned in ALL query responses!")
+            
+            st.divider()
+            
+            # Download all results
             st.download_button(
-                "📥 Download Results (CSV)",
+                "📥 Download All Results (CSV)",
                 df.to_csv(index=False),
                 "weidert_llm_results.csv",
                 "text/csv"
