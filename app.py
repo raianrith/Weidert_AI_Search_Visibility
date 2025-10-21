@@ -1406,12 +1406,12 @@ with tab4:
     st.markdown("### 🎯 Gap Analysis & Strategic Opportunities")
     st.caption("Understand where Weidert is missing and develop targeted content strategies to close visibility gaps")
     
-    gap_file = st.file_uploader("Upload results CSV", type="csv", key="gap_upload")
+    gap_file = st.file_uploader("Upload results CSV", type="csv", key="gap_upload_tab4")
     
     df_gap = None
     
     if 'latest_results' in st.session_state:
-        use_latest_gap = st.checkbox("Use results from Multi-LLM Generator", value=True, key="gap_use_latest")
+        use_latest_gap = st.checkbox("Use results from Multi-LLM Generator", value=True, key="gap_use_latest_tab4")
         if use_latest_gap:
             df_gap = st.session_state.latest_results.copy()
     
