@@ -1403,8 +1403,391 @@ with tab3:
 # ─── TAB 4: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
 # ─── TAB 4: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
 with tab4:
-    st.markdown("### 🎯 Gap Analysis & Improvement Opportunities")
-    st.caption("Identify where Weidert needs to improve visibility and prioritize content opportunities")
+    st.markdown("### 🎯 Gap Analysis & Strategic Opportunities")
+    st.caption("Understand where Weidert is missing and develop targeted content strategies to close visibility gaps")
+    
+    gap_file = st.file_uploader("Upload results CSV", type="csv", key="gap_upload")
+    
+    df_gap = None
+    
+    if 'latest_results' in st.session_state:
+        use_latest_gap = st.checkbox("Use results from Multi-LLM Generator", value=True, key="gap_use_latest")
+        if use_latest_gap:
+            df_gap = st.session_state.latest_results.copy()
+    
+    if gap_file and df_gap is None:
+        df_gap = pd.read_csv(gap_file)
+    
+    if df_gap is not None:
+        # Ensure necessary columns
+        if 'Weidert_Mentioned' not in df_gap.columns:
+            df_gap['Weidert_Mentioned'] = df_gap['Response'].apply(
+                lambda x: 'weidert' in str(x).lower() and not str(x).startswith("ERROR")
+            )
+        
+        if 'Competitors_Found' not in df_gap.columns:
+            competitor_analysis = df_gap['Response'].apply(extract_competitors_detailed)
+            df_gap['Competitors_Found'] = [', '.join(c[0]) if c[0] else '' for c in competitor_analysis]
+        
+        df_gap['Has_Competitors'] = df_gap['Competitors_Found'].apply(lambda x: len(str(x)) > 0 and str(x) != '')
+        
+        # Calculate categories
+        weidert_only = df_gap[df_gap['Weidert_Mentioned'] & ~df_gap['Has_Competitors']]
+        competitors_only = df_gap[~df_gap['Weidert_Mentioned'] & df_gap['Has_Competitors']]
+        both_mentioned = df_gap[df_gap['Weidert_Mentioned'] & df_gap['Has_Competitors']]
+        neither_mentioned = df_gap[~df_gap['Weidert_Mentioned'] & ~df_gap['Has_Competitors']]
+        
+        # SECTION 1: EXECUTIVE SUMMARY
+        st.markdown("## 📊 Executive Summary")
+        st.markdown("**What this tells you:** High-level overview of where Weidert stands in LLM responses")
+        st.caption("These four categories help you quickly understand your visibility landscape and identify immediate priorities")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(weidert_only)}</div>
+                <div style="font-size: 0.9rem;">✅ Exclusive Wins</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Weidert only, no competitors</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption("**Good:** You own these conversations")
+        
+        with col2:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(competitors_only)}</div>
+                <div style="font-size: 0.9rem;">🚨 Critical Gaps</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Competitors appear, you don't</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption("**Action needed:** Create content here")
+        
+        with col3:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(both_mentioned)}</div>
+                <div style="font-size: 0.9rem;">⚔️ Competitive Arena</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">You and competitors both appear</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption("**Optimize:** Improve your positioning")
+        
+        with col4:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{len(neither_mentioned)}</div>
+                <div style="font-size: 0.9rem;">💡 Blue Ocean</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Generic responses, no brands</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption("**Opportunity:** Be first to claim space")
+        
+        st.divider()
+        
+        # SECTION 2: WHERE ARE THE GAPS?
+        if len(competitors_only) > 0:
+            st.markdown("## 🚨 Critical Gap Analysis")
+            st.markdown("**What this tells you:** Which LLM platforms have the most visibility gaps for Weidert")
+            st.caption("Understanding which AI platform is not recommending you helps prioritize optimization efforts. If one LLM consistently excludes you, focus your content optimization for that platform's algorithms.")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                gap_by_source = competitors_only.groupby('Source').size().sort_values(ascending=False)
+                total_by_source = df_gap.groupby('Source').size()
+                gap_pct_by_source = (gap_by_source / total_by_source * 100).round(1)
+                
+                fig = px.bar(
+                    x=gap_by_source.index,
+                    y=gap_by_source.values,
+                    title="Number of Gaps by LLM Platform",
+                    labels={'x': 'LLM Platform', 'y': 'Number of Gap Responses'},
+                    color=gap_by_source.values,
+                    color_continuous_scale='Reds',
+                    text=gap_by_source.values
+                )
+                fig.update_traces(textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                worst_llm = gap_by_source.idxmax()
+                st.warning(f"⚠️ **{worst_llm}** has the most gaps ({gap_by_source[worst_llm]} responses)")
+            
+            with col2:
+                fig = px.bar(
+                    x=gap_pct_by_source.index,
+                    y=gap_pct_by_source.values,
+                    title="Gap Rate by LLM Platform (%)",
+                    labels={'x': 'LLM Platform', 'y': 'Gap Rate (%)'},
+                    color=gap_pct_by_source.values,
+                    color_continuous_scale='Reds',
+                    text=gap_pct_by_source.values
+                )
+                fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.info(f"💡 **Strategy:** Focus content optimization efforts on {worst_llm} to reduce gap rate from {gap_pct_by_source[worst_llm]:.1f}%")
+            
+            st.divider()
+            
+            # SECTION 3: WHO'S WINNING IN YOUR GAPS?
+            st.markdown("## 🏆 Competitor Analysis in Gaps")
+            st.markdown("**What this tells you:** Which competitors are capturing visibility where you're missing")
+            st.caption("These are the brands LLMs recommend instead of Weidert. Understanding who dominates your gaps helps you identify your main competitors and create competitive positioning content.")
+            
+            all_gap_competitors = []
+            for comp_str in competitors_only['Competitors_Found']:
+                if comp_str and str(comp_str) != '':
+                    all_gap_competitors.extend(str(comp_str).split(', '))
+            
+            if all_gap_competitors:
+                comp_counts = pd.Series(all_gap_competitors).value_counts().head(10)
+                
+                fig = px.bar(
+                    x=comp_counts.values,
+                    y=comp_counts.index,
+                    orientation='h',
+                    title="Top 10 Competitors Appearing in Your Gaps",
+                    labels={'x': 'Number of Mentions', 'y': 'Competitor'},
+                    color=comp_counts.values,
+                    color_continuous_scale='Oranges',
+                    text=comp_counts.values
+                )
+                fig.update_traces(textposition='outside')
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                top_competitor = comp_counts.index[0]
+                top_count = comp_counts.values[0]
+                
+                st.warning(f"🎯 **Primary Threat:** {top_competitor} appears in {top_count} of your gaps - they are your #1 competitor for these queries")
+                st.info(f"💡 **Strategy:** Create comparison content (\"Weidert Group vs {top_competitor}\") and ensure your content addresses the same topics they're being cited for")
+            
+            st.divider()
+            
+            # SECTION 4: WHAT TOPICS ARE YOU MISSING?
+            st.markdown("## 📝 Content Gap Themes")
+            st.markdown("**What this tells you:** What topics and keywords appear most in queries where you're missing")
+            st.caption("By analyzing the words that appear frequently in gap queries, you can identify specific content topics to create. Create blog posts, guides, or resources focused on these themes.")
+            
+            gap_queries_text = ' '.join(competitors_only['Query'].unique())
+            
+            # Extract meaningful keywords
+            from collections import Counter
+            import re
+            
+            words = re.findall(r'\b[a-z]{4,}\b', gap_queries_text.lower())
+            stop_words = {'what', 'best', 'that', 'this', 'with', 'from', 'where', 'which', 
+                         'them', 'there', 'their', 'about', 'would', 'these', 'those', 'other'}
+            meaningful_words = [w for w in words if w not in stop_words]
+            word_counts = Counter(meaningful_words).most_common(12)
+            
+            if word_counts:
+                col1, col2 = st.columns([3, 2])
+                
+                with col1:
+                    keywords_df = pd.DataFrame(word_counts, columns=['Topic/Keyword', 'Frequency'])
+                    
+                    fig = px.bar(
+                        keywords_df,
+                        x='Frequency',
+                        y='Topic/Keyword',
+                        orientation='h',
+                        title="Most Common Keywords in Gap Queries",
+                        color='Frequency',
+                        color_continuous_scale='Blues',
+                        text='Frequency'
+                    )
+                    fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    fig.update_traces(textposition='outside')
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    st.markdown("### 🎯 Content Strategy")
+                    st.markdown("**Create content about:**")
+                    
+                    for keyword, freq in word_counts[:6]:
+                        st.markdown(f"""
+                        <div style="background: #f0f8ff; padding: 0.5rem; margin: 0.3rem 0; border-radius: 5px; border-left: 3px solid #007bff;">
+                            <strong>{keyword.title()}</strong> <span style="color: #666;">({freq} mentions)</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.success("✅ **Action:** Prioritize creating content around these high-frequency themes")
+            
+            st.divider()
+            
+            # SECTION 5: DETAILED GAP QUERIES
+            st.markdown("## 🔍 Top Priority Gap Queries")
+            st.markdown("**What this tells you:** Specific queries where competitors appear but Weidert doesn't - your immediate content opportunities")
+            st.caption("Each expandable section shows the exact query and how all three LLMs responded. Use these to understand what content you need to create to fill the gaps.")
+            
+            # Get unique gap queries
+            gap_query_list = competitors_only['Query'].unique()
+            
+            # Show top 10 gaps
+            st.markdown(f"**Showing top {min(10, len(gap_query_list))} critical gap queries** (out of {len(gap_query_list)} total)")
+            
+            for idx, query in enumerate(gap_query_list[:10], 1):
+                query_responses = df_gap[df_gap['Query'] == query]
+                
+                # Determine severity
+                weidert_mentioned_anywhere = query_responses['Weidert_Mentioned'].any()
+                gap_responses = query_responses[~query_responses['Weidert_Mentioned']]
+                
+                if weidert_mentioned_anywhere:
+                    severity_icon = "🟡"
+                    severity = "Partial Gap"
+                else:
+                    severity_icon = "🔴"
+                    severity = "Complete Gap (HIGH PRIORITY)"
+                
+                with st.expander(f"{severity_icon} Gap #{idx}: {query[:85]}{'...' if len(query) > 85 else ''}", expanded=(idx == 1)):
+                    st.markdown(f"**Full Query:** {query}")
+                    st.markdown(f"**Gap Severity:** {severity}")
+                    
+                    if weidert_mentioned_anywhere:
+                        mentioned_sources = query_responses[query_responses['Weidert_Mentioned']]['Source'].tolist()
+                        gap_sources = gap_responses['Source'].tolist()
+                        st.success(f"✅ Weidert mentioned by: {', '.join(mentioned_sources)}")
+                        st.error(f"❌ Missing from: {', '.join(gap_sources)}")
+                    else:
+                        st.error("🚨 **CRITICAL:** Weidert not mentioned by ANY LLM for this query")
+                    
+                    st.markdown("---")
+                    st.markdown("### Side-by-Side LLM Responses")
+                    
+                    # Show all 3 responses side by side
+                    cols = st.columns(3)
+                    
+                    for col_idx, (_, row) in enumerate(query_responses.iterrows()):
+                        with cols[col_idx]:
+                            has_weidert = row['Weidert_Mentioned']
+                            has_competitors = row['Has_Competitors']
+                            
+                            # Color coding
+                            if has_weidert:
+                                header_color = "#28a745"
+                                status_text = "✅ Weidert Present"
+                            else:
+                                header_color = "#dc3545"
+                                status_text = "❌ Weidert Missing"
+                            
+                            st.markdown(f"""
+                            <div style="background: {header_color}; padding: 0.5rem; border-radius: 5px; margin-bottom: 0.5rem;">
+                                <strong style="color: white;">{row['Source']}</strong><br/>
+                                <span style="color: white; font-size: 0.85rem;">{status_text}</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Response preview
+                            response = str(row['Response'])
+                            preview = response[:250] + "..." if len(response) > 250 else response
+                            st.markdown(f"**Response Preview:**\n\n{preview}")
+                            
+                            # Show full response option
+                            with st.expander("📄 View Full Response"):
+                                st.markdown(response)
+                            
+                            # Show competitors mentioned
+                            if has_competitors:
+                                comps = row['Competitors_Found']
+                                st.warning(f"🏆 **Competitors:** {comps}")
+                            else:
+                                st.info("No competitors mentioned")
+                            
+                            st.markdown("---")
+                    
+                    # Content recommendation for this query
+                    st.markdown("### 💡 Content Recommendation")
+                    
+                    # Extract competitors for this query
+                    query_comps = []
+                    for comp_str in gap_responses['Competitors_Found']:
+                        if comp_str and str(comp_str) != '':
+                            query_comps.extend(str(comp_str).split(', '))
+                    
+                    if query_comps:
+                        top_comp = max(set(query_comps), key=query_comps.count)
+                        st.info(f"📝 Create content that directly addresses this query. Consider: comparison articles with {top_comp}, case studies, or comprehensive guides on this topic.")
+                    else:
+                        st.info(f"📝 Create authoritative content on this topic - there's an opportunity to establish Weidert as the go-to resource since no brands are currently mentioned.")
+            
+            if len(gap_query_list) > 10:
+                st.caption(f"💡 **Note:** Showing top 10 of {len(gap_query_list)} gap queries. Download the full analysis to see all gaps.")
+        
+        else:
+            st.success("## 🎉 Excellent Performance!")
+            st.markdown("**No critical gaps found.** Weidert appears in all queries where competitors are mentioned.")
+            st.info("Continue monitoring and maintain your strong visibility across all LLM platforms.")
+        
+        st.divider()
+        
+        # SECTION 6: EXPORT & NEXT STEPS
+        st.markdown("## 📥 Export & Take Action")
+        st.markdown("**What to do next:** Download these analyses and use them to guide your content strategy")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Full export
+            export_data = df_gap.copy()
+            export_data['Gap_Category'] = 'Neither'
+            export_data.loc[export_data['Weidert_Mentioned'] & ~export_data['Has_Competitors'], 'Gap_Category'] = 'Exclusive Win'
+            export_data.loc[~export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Gap_Category'] = 'Critical Gap'
+            export_data.loc[export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Gap_Category'] = 'Competitive'
+            
+            st.download_button(
+                "📥 Download Complete Gap Analysis",
+                export_data.to_csv(index=False),
+                "weidert_complete_gap_analysis.csv",
+                "text/csv",
+                help="All responses categorized by gap type"
+            )
+        
+        with col2:
+            # Critical gaps only
+            if len(competitors_only) > 0:
+                critical_export = competitors_only.copy()
+                
+                st.download_button(
+                    "📥 Download Critical Gaps Only",
+                    critical_export.to_csv(index=False),
+                    "weidert_critical_gaps.csv",
+                    "text/csv",
+                    help="Only queries where competitors appear but Weidert doesn't"
+                )
+        
+        # Next steps guidance
+        st.markdown("### 🎯 Recommended Next Steps")
+        
+        if len(competitors_only) > 0:
+            st.markdown(f"""
+            <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #007bff;">
+                <h4 style="margin-top: 0;">Your Action Plan:</h4>
+                <ol style="line-height: 2;">
+                    <li><strong>Immediate:</strong> Create content for the top 5 critical gap queries shown above</li>
+                    <li><strong>This Month:</strong> Develop comparison content with {all_gap_competitors[0] if all_gap_competitors else 'top competitors'}</li>
+                    <li><strong>Ongoing:</strong> Optimize existing content with the high-frequency keywords identified</li>
+                    <li><strong>Monitor:</strong> Re-run this analysis monthly to track improvement</li>
+                </ol>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="background: #d4edda; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #28a745;">
+                <h4 style="margin-top: 0; color: #155724;">Maintain Your Lead:</h4>
+                <ul style="line-height: 2; color: #155724;">
+                    <li>Continue creating high-quality content on your established topics</li>
+                    <li>Monitor competitor activity in your strong areas</li>
+                    <li>Expand into adjacent topics to capture more "Blue Ocean" opportunities</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    else:
+        st.info("Please run queries in Tab 1 or upload a CSV file to perform gap analysis.")
     
     gap_file = st.file_uploader("Upload results CSV", type="csv", key="gap_upload")
     
