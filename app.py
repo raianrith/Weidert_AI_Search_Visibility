@@ -738,16 +738,15 @@ with tab2:
             
             st.markdown("---")
             
-            # Detailed Query Breakdown
+            # Detailed Query Breakdown - SHOW ALL 3 LLM RESPONSES
             st.markdown("### 🔍 Detailed Query-by-Query Breakdown")
-            st.caption("Expandable view of each query showing full LLM responses where Weidert was not mentioned")
+            st.caption("Expandable view showing ALL LLM responses for each query (highlighting which didn't mention Weidert)")
             
             unique_queries = negative_results['Query'].unique()
             
             for query_idx, query in enumerate(unique_queries, 1):
-                # Get all responses for this query
+                # Get ALL responses for this query (not just negatives)
                 query_data = df_main[df_main['Query'] == query]
-                query_negatives = query_data[~query_data['Weidert_Mentioned']]
                 
                 # Check if ANY LLM mentioned Weidert for this query
                 any_mentioned = query_data['Weidert_Mentioned'].any()
@@ -769,27 +768,37 @@ with tab2:
                     # Status message
                     if any_mentioned:
                         mentioned_by = query_data[query_data['Weidert_Mentioned']]['Source'].tolist()
-                        not_mentioned_by = query_negatives['Source'].tolist()
-                        st.info(f"ℹ️ **Weidert mentioned by:** {', '.join(mentioned_by)}")
-                        st.warning(f"⚠️ **Missing from:** {', '.join(not_mentioned_by)}")
+                        not_mentioned_by = query_data[~query_data['Weidert_Mentioned']]['Source'].tolist()
+                        st.info(f"✅ **Weidert mentioned by:** {', '.join(mentioned_by)}")
+                        st.warning(f"❌ **Missing from:** {', '.join(not_mentioned_by)}")
                     else:
                         st.error("🔴 **CRITICAL**: Weidert NOT mentioned by ANY LLM for this query!")
                     
                     st.markdown("---")
                     
-                    # Show responses in columns
-                    cols = st.columns(min(len(query_negatives), 3))
+                    # Show ALL 3 responses in columns
+                    cols = st.columns(min(len(query_data), 3))
                     
-                    for idx, (_, row) in enumerate(query_negatives.iterrows()):
+                    for idx, (_, row) in enumerate(query_data.iterrows()):
                         col_idx = idx % 3
                         
                         with cols[col_idx]:
-                            # Header
+                            # Determine if Weidert was mentioned in this response
+                            weidert_mentioned = row['Weidert_Mentioned']
+                            
+                            # Header with color coding
+                            if weidert_mentioned:
+                                header_color = "#28a745"  # Green
+                                status_badge = "✅ Mentioned"
+                            else:
+                                header_color = "#dc3545"  # Red
+                                status_badge = "❌ Not Mentioned"
+                            
                             st.markdown(f"""
-                            <div style="background: {status_color}; padding: 0.5rem; 
+                            <div style="background: {header_color}; padding: 0.5rem; 
                                        border-radius: 5px; margin-bottom: 0.5rem;">
                                 <strong style="color: white;">{row['Source']}</strong>
-                                <span style="color: white; float: right;">❌ No Mention</span>
+                                <span style="color: white; float: right;">{status_badge}</span>
                             </div>
                             """, unsafe_allow_html=True)
                             
@@ -804,11 +813,19 @@ with tab2:
                             preview_text = response_text[:300] + "..." if len(response_text) > 300 else response_text
                             st.markdown(f"**Preview:** {preview_text}")
                             
+                            # Show position if Weidert was mentioned
+                            if weidert_mentioned and 'Weidert_Position' in row:
+                                st.success(f"📍 **Position:** {row['Weidert_Position']}")
+                                if 'Context_Type' in row:
+                                    context = row['Context_Type']
+                                    context_icon = "😊" if context == "Positive" else "😐" if context == "Neutral" else "😟"
+                                    st.info(f"{context_icon} **Context:** {context}")
+                            
                             # Show competitors if mentioned
                             if row['Competitors_Found'] and str(row['Competitors_Found']) != '':
-                                st.warning(f"**Competitors mentioned:** {row['Competitors_Found']}")
+                                st.warning(f"🏆 **Competitors:** {row['Competitors_Found']}")
                             else:
-                                st.info("No competitors mentioned either")
+                                st.caption("No competitors mentioned")
                             
                             # Response time
                             st.caption(f"⏱️ Response time: {row['Response_Time']}s")
