@@ -1046,8 +1046,10 @@ with tab2:
         )
 
 # ─── TAB 3: COMPETITOR COMPARISON ─────────────────────────────────────────────
+# ─── TAB 3: COMPETITOR COMPARISON ─────────────────────────────────────────────
 with tab3:
     st.markdown("### 🏆 Competitor Comparison")
+    st.caption("Head-to-head analysis comparing Weidert Group against key competitors")
     
     data_source = st.radio(
         "Choose data source:",
@@ -1088,6 +1090,9 @@ with tab3:
                 comparison_df = pd.DataFrame(competitor_analysis).T.round(1)
                 comparison_df.columns = ['Mention Rate (%)', 'Avg Position', 'Positive Context (%)', 'First Third (%)']
                 
+                # Add ranking column
+                comparison_df['Overall Rank'] = comparison_df['Mention Rate (%)'].rank(ascending=False).astype(int)
+                
                 st.dataframe(
                     comparison_df.style.background_gradient(subset=['Mention Rate (%)'], cmap='RdYlGn')
                                       .background_gradient(subset=['Positive Context (%)'], cmap='RdYlGn')
@@ -1096,32 +1101,281 @@ with tab3:
                     use_container_width=True
                 )
                 
+                # Show Weidert's rank
+                if 'Weidert Group' in comparison_df.index:
+                    weidert_rank = comparison_df.loc['Weidert Group', 'Overall Rank']
+                    total_competitors = len(comparison_df)
+                    
+                    if weidert_rank == 1:
+                        st.success(f"🥇 **Weidert Group ranks #1** out of {total_competitors} competitors!")
+                    elif weidert_rank <= 3:
+                        st.info(f"🥈 **Weidert Group ranks #{int(weidert_rank)}** out of {total_competitors} competitors")
+                    else:
+                        st.warning(f"📊 **Weidert Group ranks #{int(weidert_rank)}** out of {total_competitors} competitors")
+                
+                st.divider()
+                
+                # NEW: Head-to-Head Comparison Radar Chart
+                st.subheader("📊 Multi-Dimensional Comparison")
+                st.caption("Radar chart showing performance across all metrics")
+                
+                # Create radar chart
+                categories = ['Mention Rate', 'First Third Rate', 'Positive Context']
+                
+                fig = go.Figure()
+                
+                for competitor in selected_competitors:
+                    if competitor in competitor_analysis:
+                        values = [
+                            competitor_analysis[competitor]['mention_rate'],
+                            competitor_analysis[competitor]['first_third_rate'],
+                            competitor_analysis[competitor]['positive_context']
+                        ]
+                        
+                        fig.add_trace(go.Scatterpolar(
+                            r=values,
+                            theta=categories,
+                            fill='toself',
+                            name=competitor
+                        ))
+                
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 100]
+                        )),
+                    showlegend=True,
+                    title="Competitive Performance Radar"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.divider()
+                
+                # NEW: Win/Loss Analysis
+                st.subheader("⚔️ Win/Loss Analysis")
+                st.caption("Query-by-query breakdown: Where Weidert wins vs loses to competitors")
+                
+                # Analyze each query
+                win_loss_data = []
+                
+                for query in df_comp['Query'].unique():
+                    query_data = df_comp[df_comp['Query'] == query]
+                    
+                    # Check who appears in this query
+                    weidert_appears = any(query_data['Response'].apply(
+                        lambda x: 'weidert' in str(x).lower() and not str(x).startswith("ERROR")
+                    ))
+                    
+                    competitors_appear = []
+                    for comp in selected_competitors:
+                        if comp != "Weidert Group":
+                            comp_appears = any(query_data['Response'].apply(
+                                lambda x: comp.lower() in str(x).lower() and not str(x).startswith("ERROR")
+                            ))
+                            if comp_appears:
+                                competitors_appear.append(comp)
+                    
+                    # Classify outcome
+                    if weidert_appears and not competitors_appear:
+                        outcome = "🟢 Win (Weidert Only)"
+                    elif weidert_appears and competitors_appear:
+                        outcome = "🟡 Tie (Both Appear)"
+                    elif not weidert_appears and competitors_appear:
+                        outcome = "🔴 Loss (Competitor Only)"
+                    else:
+                        outcome = "⚪ Neither"
+                    
+                    win_loss_data.append({
+                        'Query': query,
+                        'Outcome': outcome,
+                        'Competitors Present': ', '.join(competitors_appear) if competitors_appear else 'None'
+                    })
+                
+                win_loss_df = pd.DataFrame(win_loss_data)
+                
+                # Summary counts
+                col1, col2, col3, col4 = st.columns(4)
+                
+                wins = (win_loss_df['Outcome'] == '🟢 Win (Weidert Only)').sum()
+                ties = (win_loss_df['Outcome'] == '🟡 Tie (Both Appear)').sum()
+                losses = (win_loss_df['Outcome'] == '🔴 Loss (Competitor Only)').sum()
+                neither = (win_loss_df['Outcome'] == '⚪ Neither').sum()
+                
+                with col1:
+                    st.metric("🟢 Wins", wins, f"{wins/len(win_loss_df)*100:.1f}%")
+                
+                with col2:
+                    st.metric("🟡 Ties", ties, f"{ties/len(win_loss_df)*100:.1f}%")
+                
+                with col3:
+                    st.metric("🔴 Losses", losses, f"{losses/len(win_loss_df)*100:.1f}%")
+                
+                with col4:
+                    st.metric("⚪ Neither", neither, f"{neither/len(win_loss_df)*100:.1f}%")
+                
+                # Show win/loss breakdown
+                st.dataframe(win_loss_df, use_container_width=True, height=300)
+                
+                st.divider()
+                
+                # NEW: Co-occurrence Matrix
+                st.subheader("🔗 Co-Mention Analysis")
+                st.caption("How often competitors appear together with Weidert in the same responses")
+                
+                co_mention_matrix = []
+                
+                for comp in selected_competitors:
+                    if comp == "Weidert Group":
+                        continue
+                    
+                    # Count queries where both Weidert and this competitor appear
+                    both_count = 0
+                    weidert_only = 0
+                    comp_only = 0
+                    
+                    for query in df_comp['Query'].unique():
+                        query_data = df_comp[df_comp['Query'] == query]
+                        
+                        weidert_in_query = any(query_data['Response'].apply(
+                            lambda x: 'weidert' in str(x).lower() and not str(x).startswith("ERROR")
+                        ))
+                        
+                        comp_in_query = any(query_data['Response'].apply(
+                            lambda x: comp.lower() in str(x).lower() and not str(x).startswith("ERROR")
+                        ))
+                        
+                        if weidert_in_query and comp_in_query:
+                            both_count += 1
+                        elif weidert_in_query:
+                            weidert_only += 1
+                        elif comp_in_query:
+                            comp_only += 1
+                    
+                    co_mention_matrix.append({
+                        'Competitor': comp,
+                        'Both Mentioned': both_count,
+                        'Weidert Only': weidert_only,
+                        'Competitor Only': comp_only,
+                        'Co-Mention Rate (%)': round(both_count / max(both_count + weidert_only + comp_only, 1) * 100, 1)
+                    })
+                
+                co_mention_df = pd.DataFrame(co_mention_matrix)
+                
+                if len(co_mention_df) > 0:
+                    st.dataframe(co_mention_df, use_container_width=True)
+                    
+                    # Visualize co-mention rates
+                    fig = px.bar(co_mention_df, x='Competitor', y='Co-Mention Rate (%)',
+                               title='How Often Competitors Appear WITH Weidert',
+                               color='Co-Mention Rate (%)',
+                               color_continuous_scale='Bluered',
+                               text='Co-Mention Rate (%)')
+                    fig.update_traces(textposition='outside')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.info("💡 **High co-mention rate** = Often compared together (direct competitors)\n\n**Low co-mention rate** = Appear in different contexts (different market positioning)")
+                
+                st.divider()
+                
+                # NEW: Competitive Strengths & Weaknesses
+                st.subheader("💪 Competitive Strengths & Weaknesses")
+                st.caption("Where Weidert outperforms vs underperforms against selected competitors")
+                
+                if 'Weidert Group' in comparison_df.index:
+                    weidert_metrics = comparison_df.loc['Weidert Group']
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### ✅ Strengths")
+                        strengths = []
+                        
+                        # Check each metric
+                        for metric in ['Mention Rate (%)', 'First Third (%)', 'Positive Context (%)']:
+                            weidert_value = weidert_metrics[metric]
+                            competitor_values = [comparison_df.loc[comp, metric] for comp in selected_competitors if comp != 'Weidert Group']
+                            
+                            if competitor_values:
+                                avg_competitor = sum(competitor_values) / len(competitor_values)
+                                
+                                if weidert_value > avg_competitor:
+                                    diff = weidert_value - avg_competitor
+                                    strengths.append(f"**{metric}**: {weidert_value:.1f}% (↑ {diff:.1f}% above avg)")
+                        
+                        if strengths:
+                            for strength in strengths:
+                                st.success(strength)
+                        else:
+                            st.info("No clear strengths identified")
+                    
+                    with col2:
+                        st.markdown("#### ⚠️ Weaknesses")
+                        weaknesses = []
+                        
+                        # Check each metric
+                        for metric in ['Mention Rate (%)', 'First Third (%)', 'Positive Context (%)']:
+                            weidert_value = weidert_metrics[metric]
+                            competitor_values = [comparison_df.loc[comp, metric] for comp in selected_competitors if comp != 'Weidert Group']
+                            
+                            if competitor_values:
+                                avg_competitor = sum(competitor_values) / len(competitor_values)
+                                
+                                if weidert_value < avg_competitor:
+                                    diff = avg_competitor - weidert_value
+                                    weaknesses.append(f"**{metric}**: {weidert_value:.1f}% (↓ {diff:.1f}% below avg)")
+                        
+                        if weaknesses:
+                            for weakness in weaknesses:
+                                st.warning(weakness)
+                        else:
+                            st.success("No clear weaknesses identified")
+                
+                st.divider()
+                
+                # Original charts with better titles
+                st.subheader("📈 Performance Comparison Charts")
+                
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     mention_rates = [competitor_analysis[comp]['mention_rate'] for comp in selected_competitors]
                     fig = px.bar(x=selected_competitors, y=mention_rates,
-                                title="Mention Rate Comparison",
+                                title="Overall Mention Rate Comparison",
                                 labels={'x': 'Company', 'y': 'Mention Rate (%)'},
                                 color=mention_rates,
-                                color_continuous_scale='RdYlGn')
+                                color_continuous_scale='RdYlGn',
+                                text=mention_rates)
+                    fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with col2:
                     first_third_rates = [competitor_analysis[comp]['first_third_rate'] for comp in selected_competitors]
                     fig = px.bar(x=selected_competitors, y=first_third_rates,
-                                title="First Third Position Rate",
+                                title="Early Position Rate (First Third)",
                                 labels={'x': 'Company', 'y': 'First Third Rate (%)'},
                                 color=first_third_rates,
-                                color_continuous_scale='RdYlGn')
+                                color_continuous_scale='RdYlGn',
+                                text=first_third_rates)
+                    fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
                     st.plotly_chart(fig, use_container_width=True)
+                
+                # Download comparison data
+                st.download_button(
+                    "📥 Download Competitor Analysis (CSV)",
+                    comparison_df.to_csv(),
+                    "weidert_competitor_comparison.csv",
+                    "text/csv"
+                )
         else:
             st.warning("No results available. Please run queries in Tab 1 first.")
     
     elif data_source == "Upload CSV file":
         uploaded_comp = st.file_uploader("Upload CSV", type="csv", key="comp_upload")
         if uploaded_comp:
-            st.info("File uploaded. Configure analysis above and click 'Analyze Competitors'")
+            df_comp = pd.read_csv(uploaded_comp)
+            st.success("File uploaded! Configure competitors above and click 'Analyze Competitors'")
     
     else:
         use_predefined = st.checkbox("Use predefined 20 queries", value=True)
@@ -1142,47 +1396,9 @@ with tab3:
                 with st.spinner("Running competitor analysis..."):
                     results = process_queries_parallel(queries)
                     df_comp = pd.DataFrame(results)
-                    
-                    selected_competitors = ["Weidert Group", "Stream Creative", "New Breed Revenue", "SmartBug Media"]
-                    competitor_analysis = {}
-                    
-                    for competitor in selected_competitors:
-                        search_term = "weidert" if competitor == "Weidert Group" else competitor.lower()
-                        mentions = df_comp['Response'].apply(
-                            lambda x: search_term in str(x).lower() and not str(x).startswith("ERROR")
-                        )
-                        positions = df_comp['Response'].apply(lambda x: analyze_position(x, competitor))
-                        contexts = df_comp['Response'].apply(lambda x: analyze_context(x, competitor))
-                        
-                        competitor_analysis[competitor] = {
-                            'mention_rate': (mentions.sum() / len(df_comp) * 100),
-                            'avg_position': sum([p[1] for p in positions if p[1] > 0]) / max(sum([1 for p in positions if p[1] > 0]), 1),
-                            'positive_context': sum([1 for c in contexts if c[0] == 'Positive']) / len(df_comp) * 100,
-                            'first_third_rate': sum([1 for p in positions if p[0] == 'First Third']) / len(df_comp) * 100
-                        }
-                    
-                    st.subheader("🏆 Competitor Performance Matrix")
-                    
-                    comparison_df = pd.DataFrame(competitor_analysis).T.round(1)
-                    comparison_df.columns = ['Mention Rate (%)', 'Avg Position', 'Positive Context (%)', 'First Third (%)']
-                    
-                    st.dataframe(comparison_df.style.background_gradient(cmap='RdYlGn'), use_container_width=True)
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        mention_rates = [competitor_analysis[comp]['mention_rate'] for comp in selected_competitors]
-                        fig = px.bar(x=selected_competitors, y=mention_rates,
-                                    title="Mention Rate Comparison",
-                                    labels={'x': 'Company', 'y': 'Mention Rate (%)'})
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    with col2:
-                        first_third_rates = [competitor_analysis[comp]['first_third_rate'] for comp in selected_competitors]
-                        fig = px.bar(x=selected_competitors, y=first_third_rates,
-                                    title="First Third Position Rate",
-                                    labels={'x': 'Company', 'y': 'Rate (%)'})
-                        st.plotly_chart(fig, use_container_width=True)
+                    st.session_state.latest_results = df_comp
+                    st.success("✅ Analysis complete! Select competitors above and click 'Analyze Competitors'")
+                    st.rerun()
 
 # ─── TAB 4: EXECUTIVE DASHBOARD ─────────────────────────────────────────────
 with tab4:
