@@ -437,11 +437,10 @@ def process_queries_parallel(queries):
     return results
 
 # ─── MAIN APPLICATION TABS ─────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "Multi-LLM Response Generator", 
     "Search Visibility Analysis", 
     "Competitor Comparison", 
-    "Executive Dashboard",
     "Gap Analysis & Opportunities"
 ])
 
@@ -1400,189 +1399,9 @@ with tab3:
                     st.success("✅ Analysis complete! Select competitors above and click 'Analyze Competitors'")
                     st.rerun()
 
-# ─── TAB 4: EXECUTIVE DASHBOARD ─────────────────────────────────────────────
-with tab4:
-    st.markdown("### 📈 Executive Dashboard")
-    
-    dashboard_file = st.file_uploader("Upload results CSV", type="csv", key="dashboard_upload")
-    
-    df_dashboard = None
-    
-    if 'latest_results' in st.session_state:
-        use_latest_dash = st.checkbox("Use results from Multi-LLM Generator", value=True, key="dash_use_latest")
-        if use_latest_dash:
-            df_dashboard = st.session_state.latest_results.copy()
-    
-    if dashboard_file and df_dashboard is None:
-        df_dashboard = pd.read_csv(dashboard_file)
-    
-    if df_dashboard is not None:
-        # Process dashboard data
-        if 'Weidert_Mentioned' not in df_dashboard.columns:
-            df_dashboard['Weidert_Mentioned'] = df_dashboard['Response'].apply(
-                lambda x: 'weidert' in str(x).lower() and not str(x).startswith("ERROR")
-            )
-        
-        if 'Branded_Query' not in df_dashboard.columns:
-            df_dashboard['Branded_Query'] = df_dashboard['Query'].str.contains('weidert', case=False, na=False)
-        
-        if 'Weidert_Position' not in df_dashboard.columns:
-            position_analysis = df_dashboard['Response'].apply(lambda x: analyze_position(x, "Weidert"))
-            df_dashboard['Weidert_Position'] = [p[0] for p in position_analysis]
-        
-        if 'Context_Type' not in df_dashboard.columns:
-            context_analysis = df_dashboard['Response'].apply(lambda x: analyze_context(x, "Weidert"))
-            df_dashboard['Context_Type'] = [c[0] for c in context_analysis]
-            df_dashboard['Context_Sentiment'] = [c[1] for c in context_analysis]
-        
-        if 'Competitors_Found' not in df_dashboard.columns:
-            competitor_analysis = df_dashboard['Response'].apply(extract_competitors_detailed)
-            df_dashboard['Competitors_Count'] = [len(c[0]) for c in competitor_analysis]
-        else:
-            df_dashboard['Competitors_Count'] = df_dashboard['Competitors_Found'].apply(
-                lambda x: len(str(x).split(', ')) if x and str(x) != '' else 0
-            )
-        
-        # KPIs
-        st.subheader("🎯 Key Performance Indicators")
-        
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        total_queries = len(df_dashboard)
-        mention_rate = (df_dashboard['Weidert_Mentioned'].sum() / total_queries * 100) if total_queries > 0 else 0
-        
-        first_position_count = (df_dashboard['Weidert_Position'] == 'First Third').sum()
-        first_position_rate = (first_position_count / total_queries * 100) if total_queries > 0 else 0
-        
-        positive_context_count = (df_dashboard['Context_Type'] == 'Positive').sum()
-        positive_context_rate = (positive_context_count / total_queries * 100) if total_queries > 0 else 0
-        
-        nonbranded = df_dashboard[~df_dashboard['Branded_Query']]
-        nonbranded_mention_rate = (nonbranded['Weidert_Mentioned'].sum() / len(nonbranded) * 100) if len(nonbranded) > 0 else 0
-        
-        avg_competitors = df_dashboard['Competitors_Count'].mean()
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{mention_rate:.1f}%</div>
-                <div class="metric-label">Overall Mention Rate</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{first_position_rate:.1f}%</div>
-                <div class="metric-label">First Third Position</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{positive_context_rate:.1f}%</div>
-                <div class="metric-label">Positive Context</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{nonbranded_mention_rate:.1f}%</div>
-                <div class="metric-label">Non-Branded Mentions</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col5:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{avg_competitors:.1f}</div>
-                <div class="metric-label">Avg Competitors/Query</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # Performance by Source
-        st.subheader("🏅 Performance by LLM Source")
-        
-        source_performance = df_dashboard.groupby('Source').agg({
-            'Weidert_Mentioned': lambda x: (x.sum() / len(x) * 100),
-            'Weidert_Position': lambda x: sum([1 for p in x if p == 'First Third']) / len(x) * 100,
-            'Context_Type': lambda x: sum([1 for c in x if c == 'Positive']) / len(x) * 100,
-            'Context_Sentiment': 'mean',
-            'Competitors_Count': 'mean'
-        }).round(2)
-        
-        source_performance.columns = [
-            'Mention Rate (%)', 'First Third (%)', 'Positive Context (%)',
-            'Avg Sentiment', 'Avg Competitors'
-        ]
-        
-        fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=('Mention Rate by Source', 'Position Performance',
-                           'Context Analysis', 'Competitive Landscape')
-        )
-        
-        sources = source_performance.index.tolist()
-        
-        fig.add_trace(
-            go.Bar(name='Mention Rate', x=sources, y=source_performance['Mention Rate (%)'],
-                  marker_color='lightblue'),
-            row=1, col=1
-        )
-        
-        fig.add_trace(
-            go.Bar(name='First Third', x=sources, y=source_performance['First Third (%)'],
-                  marker_color='lightgreen'),
-            row=1, col=2
-        )
-        
-        fig.add_trace(
-            go.Bar(name='Positive Context', x=sources, y=source_performance['Positive Context (%)'],
-                  marker_color='gold'),
-            row=2, col=1
-        )
-        
-        fig.add_trace(
-            go.Bar(name='Avg Competitors', x=sources, y=source_performance['Avg Competitors'],
-                  marker_color='coral'),
-            row=2, col=2
-        )
-        
-        fig.update_layout(height=600, showlegend=False, title_text="Comprehensive Performance Analysis")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Recommendations
-        st.subheader("💡 Actionable Recommendations")
-        
-        recommendations = []
-        
-        if mention_rate < 50:
-            recommendations.append("🔴 **Critical**: Overall mention rate is below 50%. Focus on brand visibility strategies.")
-        
-        if first_position_rate < 30:
-            recommendations.append("🟡 **Important**: Low first-position rate. Optimize content for earlier mentions.")
-        
-        if positive_context_rate < 60:
-            recommendations.append("🟡 **Attention**: Context sentiment needs improvement. Review brand messaging.")
-        
-        if nonbranded_mention_rate < 20:
-            recommendations.append("🔴 **Priority**: Very low non-branded mentions. Strengthen SEO and content strategy.")
-        
-        if avg_competitors > 3:
-            recommendations.append("🟡 **Competitive**: High competitor density. Differentiate value propositions.")
-        
-        if not recommendations:
-            recommendations.append("🟢 **Excellent**: Performance is strong across all metrics. Continue current strategies.")
-        
-        for rec in recommendations:
-            st.markdown(rec)
 
-# ─── TAB 5: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
-with tab5:
+# ─── TAB 4: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
+with tab4:
     st.markdown("### 🎯 Gap Analysis & Improvement Opportunities")
     st.caption("Side-by-side comparison highlighting where Weidert needs to improve visibility")
     
