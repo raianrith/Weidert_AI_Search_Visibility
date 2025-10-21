@@ -738,6 +738,196 @@ with tab2:
             
             st.markdown("---")
             
+            # NEW: Sources Citation Analysis
+            st.markdown("### 🔗 Sources Citation Analysis")
+            st.caption("Analysis of URLs and sources cited in LLM responses")
+            
+            # Ensure Sources_Cited column exists
+            if 'Sources_Cited' not in df_main.columns:
+                df_main['Sources_Cited'] = df_main['Response'].apply(
+                    lambda x: ', '.join(re.findall(r'https?://\S+', str(x))) if not str(x).startswith("ERROR") else ''
+                )
+            
+            # Calculate citation metrics
+            has_sources = df_main['Sources_Cited'].apply(lambda x: len(str(x)) > 0 and str(x) != '')
+            responses_with_sources = has_sources.sum()
+            citation_rate = (responses_with_sources / len(df_main) * 100)
+            
+            # Weidert URL citation
+            if 'Weidert_URL_Cited' not in df_main.columns:
+                df_main['Weidert_URL_Cited'] = df_main['Sources_Cited'].str.contains('weidert.com', case=False, na=False)
+            
+            weidert_url_citations = df_main['Weidert_URL_Cited'].sum()
+            weidert_url_rate = (weidert_url_citations / len(df_main) * 100)
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Responses with Sources", f"{responses_with_sources}/{len(df_main)}", 
+                         f"{citation_rate:.1f}%")
+            
+            with col2:
+                st.metric("Weidert.com Citations", f"{weidert_url_citations}", 
+                         f"{weidert_url_rate:.1f}%")
+            
+            with col3:
+                # Average sources per response
+                source_counts = df_main['Sources_Cited'].apply(
+                    lambda x: len(str(x).split(', ')) if x and str(x) != '' else 0
+                )
+                avg_sources = source_counts.mean()
+                st.metric("Avg Sources per Response", f"{avg_sources:.1f}")
+            
+            with col4:
+                # Weidert URL citation when mentioned
+                weidert_mentioned_df = df_main[df_main['Weidert_Mentioned']]
+                if len(weidert_mentioned_df) > 0:
+                    url_when_mentioned = (weidert_mentioned_df['Weidert_URL_Cited'].sum() / len(weidert_mentioned_df) * 100)
+                    st.metric("URL When Mentioned", f"{url_when_mentioned:.1f}%")
+                else:
+                    st.metric("URL When Mentioned", "N/A")
+            
+            st.markdown("---")
+            
+            # Citation rate by LLM source
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📊 Citation Rate by LLM")
+                citation_by_source = df_main.groupby('Source').apply(
+                    lambda x: (x['Sources_Cited'].apply(lambda y: len(str(y)) > 0 and str(y) != '').sum() / len(x) * 100)
+                ).round(1)
+                
+                fig = px.bar(x=citation_by_source.index, y=citation_by_source.values,
+                           title='Percentage of Responses with Sources',
+                           labels={'x': 'LLM Source', 'y': 'Citation Rate (%)'},
+                           color=citation_by_source.values,
+                           color_continuous_scale='Blues',
+                           text=citation_by_source.values)
+                fig.update_traces(textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.markdown("#### 🌐 Weidert.com Citation by LLM")
+                weidert_citation_by_source = df_main.groupby('Source').apply(
+                    lambda x: (x['Weidert_URL_Cited'].sum() / len(x) * 100)
+                ).round(1)
+                
+                fig = px.bar(x=weidert_citation_by_source.index, y=weidert_citation_by_source.values,
+                           title='Weidert.com Citation Rate',
+                           labels={'x': 'LLM Source', 'y': 'Citation Rate (%)'},
+                           color=weidert_citation_by_source.values,
+                           color_continuous_scale='Greens',
+                           text=weidert_citation_by_source.values)
+                fig.update_traces(textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Extract and analyze all URLs
+            st.markdown("#### 🔝 Most Frequently Cited Domains")
+            
+            all_urls = []
+            for sources in df_main['Sources_Cited']:
+                if sources and str(sources) != '':
+                    urls = str(sources).split(', ')
+                    all_urls.extend(urls)
+            
+            if all_urls:
+                # Extract domains from URLs
+                import re
+                from urllib.parse import urlparse
+                
+                domains = []
+                for url in all_urls:
+                    try:
+                        parsed = urlparse(url)
+                        domain = parsed.netloc.replace('www.', '')
+                        if domain:
+                            domains.append(domain)
+                    except:
+                        pass
+                
+                if domains:
+                    domain_counts = pd.Series(domains).value_counts().head(15)
+                    
+                    # Highlight Weidert domain
+                    colors = ['#28a745' if 'weidert.com' in domain else '#6c757d' for domain in domain_counts.index]
+                    
+                    fig = px.bar(x=domain_counts.values, y=domain_counts.index, orientation='h',
+                               title='Top 15 Most Cited Domains',
+                               labels={'x': 'Number of Citations', 'y': 'Domain'},
+                               text=domain_counts.values)
+                    fig.update_traces(marker_color=colors, textposition='outside')
+                    fig.update_layout(showlegend=False, height=500)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.caption("🟢 Green = Weidert.com | ⚫ Gray = Other domains")
+                    
+                    # Show if Weidert is in top domains
+                    weidert_rank = None
+                    for rank, (domain, count) in enumerate(domain_counts.items(), 1):
+                        if 'weidert.com' in domain:
+                            weidert_rank = rank
+                            break
+                    
+                    if weidert_rank:
+                        st.success(f"✅ Weidert.com ranks **#{weidert_rank}** among cited domains with **{domain_counts['weidert.com']} citations**")
+                    else:
+                        st.warning("⚠️ Weidert.com does not appear in the top 15 cited domains")
+                else:
+                    st.info("No valid domains found in cited sources")
+            else:
+                st.info("No sources were cited in the responses")
+            
+            st.markdown("---")
+            
+            # Detailed source breakdown by query (for negative results)
+            st.markdown("#### 🔍 Sources Cited in Negative Results")
+            st.caption("What sources are LLMs citing when they DON'T mention Weidert?")
+            
+            negative_with_sources = negative_results[negative_results['Sources_Cited'].apply(lambda x: len(str(x)) > 0 and str(x) != '')]
+            
+            if len(negative_with_sources) > 0:
+                st.info(f"📊 {len(negative_with_sources)} out of {len(negative_results)} negative responses ({len(negative_with_sources)/len(negative_results)*100:.1f}%) included source citations")
+                
+                # Extract domains from negative results
+                negative_urls = []
+                for sources in negative_with_sources['Sources_Cited']:
+                    if sources and str(sources) != '':
+                        urls = str(sources).split(', ')
+                        negative_urls.extend(urls)
+                
+                negative_domains = []
+                for url in negative_urls:
+                    try:
+                        parsed = urlparse(url)
+                        domain = parsed.netloc.replace('www.', '')
+                        if domain:
+                            negative_domains.append(domain)
+                    except:
+                        pass
+                
+                if negative_domains:
+                    negative_domain_counts = pd.Series(negative_domains).value_counts().head(10)
+                    
+                    fig = px.bar(x=negative_domain_counts.values, y=negative_domain_counts.index, orientation='h',
+                               title='Top 10 Domains Cited When Weidert NOT Mentioned',
+                               labels={'x': 'Number of Citations', 'y': 'Domain'},
+                               color=negative_domain_counts.values,
+                               color_continuous_scale='Reds',
+                               text=negative_domain_counts.values)
+                    fig.update_traces(textposition='outside')
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.warning("💡 **Action Item**: These domains are competing for visibility. Consider creating comparison content or getting featured on these sites.")
+            else:
+                st.info("None of the negative results included source citations")
+            
+            st.markdown("---")
+            
             # Detailed Query Breakdown - SHOW ALL 3 LLM RESPONSES
             st.markdown("### 🔍 Detailed Query-by-Query Breakdown")
             st.caption("Expandable view showing ALL LLM responses for each query (highlighting which didn't mention Weidert)")
