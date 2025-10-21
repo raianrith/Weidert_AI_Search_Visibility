@@ -1401,9 +1401,10 @@ with tab3:
 
 
 # ─── TAB 4: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
+# ─── TAB 4: GAP ANALYSIS & OPPORTUNITIES ─────────────────────────────────────
 with tab4:
     st.markdown("### 🎯 Gap Analysis & Improvement Opportunities")
-    st.caption("Side-by-side comparison highlighting where Weidert needs to improve visibility")
+    st.caption("Identify where Weidert needs to improve visibility and prioritize content opportunities")
     
     gap_file = st.file_uploader("Upload results CSV", type="csv", key="gap_upload")
     
@@ -1431,7 +1432,7 @@ with tab4:
         df_gap['Has_Competitors'] = df_gap['Competitors_Found'].apply(lambda x: len(str(x)) > 0 and str(x) != '')
         
         # Create analysis categories
-        st.subheader("📊 Response Categories")
+        st.subheader("📊 Gap Category Overview")
         
         # Calculate categories
         weidert_only = df_gap[df_gap['Weidert_Mentioned'] & ~df_gap['Has_Competitors']]
@@ -1446,7 +1447,7 @@ with tab4:
             <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
                 <div style="font-size: 2rem; font-weight: bold;">{len(weidert_only)}</div>
                 <div style="font-size: 0.9rem;">✅ Weidert Only</div>
-                <div style="font-size: 0.8rem; opacity: 0.9;">No competitors mentioned</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Protect these wins</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1454,8 +1455,8 @@ with tab4:
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
                 <div style="font-size: 2rem; font-weight: bold;">{len(competitors_only)}</div>
-                <div style="font-size: 0.9rem;">⚠️ Competitors Only</div>
-                <div style="font-size: 0.8rem; opacity: 0.9;">Weidert NOT mentioned</div>
+                <div style="font-size: 0.9rem;">⚠️ Critical Gaps</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Immediate action needed</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1463,8 +1464,8 @@ with tab4:
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
                 <div style="font-size: 2rem; font-weight: bold;">{len(both_mentioned)}</div>
-                <div style="font-size: 0.9rem;">🤝 Both Mentioned</div>
-                <div style="font-size: 0.8rem; opacity: 0.9;">Weidert + competitors</div>
+                <div style="font-size: 0.9rem;">🤝 Competitive</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Improve positioning</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1472,76 +1473,305 @@ with tab4:
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center;">
                 <div style="font-size: 2rem; font-weight: bold;">{len(neither_mentioned)}</div>
-                <div style="font-size: 0.9rem;">❌ Neither</div>
-                <div style="font-size: 0.8rem; opacity: 0.9;">Generic responses</div>
+                <div style="font-size: 0.9rem;">❌ Generic</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">Category creation opportunity</div>
             </div>
             """, unsafe_allow_html=True)
         
         st.divider()
         
-        # CRITICAL: Competitors mentioned but NOT Weidert
-        st.subheader("🚨 CRITICAL GAPS: Competitors Mentioned, Weidert Missing")
-        st.caption("These are the highest priority opportunities - Weidert should be mentioned here but isn't")
+        # NEW: Gap Prioritization Matrix
+        st.subheader("🎯 Gap Prioritization Matrix")
+        st.caption("Prioritize which gaps to address first based on competitive intensity and query volume")
         
         if len(competitors_only) > 0:
-            # Show distribution by source
-            col1, col2 = st.columns(2)
+            # Analyze each gap query
+            gap_priority_data = []
             
-            with col1:
-                gap_by_source = competitors_only.groupby('Source').size()
-                fig = px.pie(values=gap_by_source.values, names=gap_by_source.index,
-                           title="Critical Gaps by LLM Source",
-                           color_discrete_sequence=['#dc3545', '#c82333', '#bd2130'])
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Most common competitors in these gaps
-                all_comp_mentions = []
-                for comp_str in competitors_only['Competitors_Found']:
-                    if comp_str and str(comp_str) != '':
-                        all_comp_mentions.extend(str(comp_str).split(', '))
+            for query in competitors_only['Query'].unique():
+                query_gaps = competitors_only[competitors_only['Query'] == query]
                 
-                if all_comp_mentions:
-                    comp_counts = pd.Series(all_comp_mentions).value_counts().head(5)
-                    fig = px.bar(x=comp_counts.values, y=comp_counts.index, orientation='h',
-                               title="Competitors Appearing in Gaps",
-                               labels={'x': 'Mentions', 'y': 'Competitor'},
-                               color_discrete_sequence=['#dc3545'])
+                # Count unique competitors
+                all_comps = []
+                for comp_str in query_gaps['Competitors_Found']:
+                    if comp_str and str(comp_str) != '':
+                        all_comps.extend(str(comp_str).split(', '))
+                unique_comps = len(set(all_comps))
+                
+                # Count how many LLMs have this gap
+                llm_count = len(query_gaps)
+                
+                # Calculate priority score (higher = more urgent)
+                priority_score = (unique_comps * 10) + (llm_count * 5)
+                
+                # Determine priority level
+                if priority_score >= 25:
+                    priority = "🔴 Critical"
+                elif priority_score >= 15:
+                    priority = "🟠 High"
+                else:
+                    priority = "🟡 Medium"
+                
+                gap_priority_data.append({
+                    'Query': query[:80] + ('...' if len(query) > 80 else ''),
+                    'Priority': priority,
+                    'Score': priority_score,
+                    'Competitors': unique_comps,
+                    'LLMs Affected': llm_count,
+                    'Top Competitor': max(set(all_comps), key=all_comps.count) if all_comps else 'None'
+                })
+            
+            priority_df = pd.DataFrame(gap_priority_data).sort_values('Score', ascending=False)
+            
+            # Show top 10 priority gaps
+            st.markdown("#### 🔝 Top 10 Priority Gaps to Address")
+            
+            st.dataframe(
+                priority_df.head(10)[['Query', 'Priority', 'Competitors', 'LLMs Affected', 'Top Competitor']],
+                use_container_width=True,
+                height=400
+            )
+            
+            st.caption("**Priority Score** = (Unique Competitors × 10) + (LLMs Affected × 5)")
+            
+            st.divider()
+        
+        # NEW: Gap Patterns Analysis
+        st.subheader("🔍 Gap Pattern Analysis")
+        st.caption("Identify common patterns in gaps to guide content strategy")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📊 Gaps by Query Type")
+            
+            # Categorize queries
+            if len(competitors_only) > 0:
+                gap_queries = competitors_only['Query'].unique()
+                
+                query_categories = {
+                    'Industry-Specific': 0,
+                    'Service-Based': 0,
+                    'Comparison': 0,
+                    'Problem/Solution': 0,
+                    'General Discovery': 0
+                }
+                
+                for query in gap_queries:
+                    query_lower = query.lower()
+                    if any(word in query_lower for word in ['manufacturing', 'industrial', 'engineering', 'logistics']):
+                        query_categories['Industry-Specific'] += 1
+                    elif any(word in query_lower for word in ['vs', 'compare', 'versus', 'alternative']):
+                        query_categories['Comparison'] += 1
+                    elif any(word in query_lower for word in ['how to', 'improve', 'generate', 'measure']):
+                        query_categories['Problem/Solution'] += 1
+                    elif any(word in query_lower for word in ['hubspot', 'implementation', 'consulting', 'marketing automation']):
+                        query_categories['Service-Based'] += 1
+                    else:
+                        query_categories['General Discovery'] += 1
+                
+                fig = px.pie(
+                    values=list(query_categories.values()),
+                    names=list(query_categories.keys()),
+                    title="Gap Distribution by Query Category"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show which category needs most attention
+                top_category = max(query_categories, key=query_categories.get)
+                st.info(f"💡 **Focus Area**: {top_category} queries need the most attention ({query_categories[top_category]} gaps)")
+        
+        with col2:
+            st.markdown("#### 🌊 Gap Trends by LLM")
+            
+            if len(competitors_only) > 0:
+                # Gaps by LLM
+                gaps_by_llm = competitors_only.groupby('Source').size()
+                total_by_llm = df_gap.groupby('Source').size()
+                gap_rate_by_llm = (gaps_by_llm / total_by_llm * 100).round(1)
+                
+                fig = px.bar(
+                    x=gap_rate_by_llm.index,
+                    y=gap_rate_by_llm.values,
+                    title="Gap Rate by LLM Platform",
+                    labels={'x': 'LLM', 'y': 'Gap Rate (%)'},
+                    color=gap_rate_by_llm.values,
+                    color_continuous_scale='Reds',
+                    text=gap_rate_by_llm.values
+                )
+                fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show which LLM has worst gaps
+                worst_llm = gap_rate_by_llm.idxmax()
+                st.warning(f"⚠️ **Action Needed**: {worst_llm} has the highest gap rate at {gap_rate_by_llm[worst_llm]:.1f}%")
+        
+        st.divider()
+        
+        # NEW: Opportunity Sizing
+        st.subheader("💰 Opportunity Sizing")
+        st.caption("Estimate the potential impact of closing visibility gaps")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Calculate potential reach
+            total_queries = len(df_gap['Query'].unique())
+            gap_queries_count = len(competitors_only['Query'].unique())
+            potential_improvement = (gap_queries_count / total_queries * 100)
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); 
+                        padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; font-weight: bold;">{potential_improvement:.0f}%</div>
+                <div style="font-size: 0.9rem;">Potential Reach Increase</div>
+                <div style="font-size: 0.8rem; opacity: 0.9;">If all gaps closed</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            # Quick wins (gaps with low competition)
+            if len(competitors_only) > 0:
+                quick_wins = 0
+                for query in competitors_only['Query'].unique():
+                    query_gaps = competitors_only[competitors_only['Query'] == query]
+                    all_comps = []
+                    for comp_str in query_gaps['Competitors_Found']:
+                        if comp_str and str(comp_str) != '':
+                            all_comps.extend(str(comp_str).split(', '))
+                    if len(set(all_comps)) <= 2:  # Low competition
+                        quick_wins += 1
+                
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
+                            padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: bold;">{quick_wins}</div>
+                    <div style="font-size: 0.9rem;">Quick Win Opportunities</div>
+                    <div style="font-size: 0.8rem; opacity: 0.9;">Low competition gaps</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col3:
+            # Competitive battlegrounds (high competition gaps)
+            if len(competitors_only) > 0:
+                battlegrounds = 0
+                for query in competitors_only['Query'].unique():
+                    query_gaps = competitors_only[competitors_only['Query'] == query]
+                    all_comps = []
+                    for comp_str in query_gaps['Competitors_Found']:
+                        if comp_str and str(comp_str) != '':
+                            all_comps.extend(str(comp_str).split(', '))
+                    if len(set(all_comps)) >= 3:  # High competition
+                        battlegrounds += 1
+                
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); 
+                            padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: bold;">{battlegrounds}</div>
+                    <div style="font-size: 0.9rem;">Competitive Battles</div>
+                    <div style="font-size: 0.8rem; opacity: 0.9;">High competition gaps</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # NEW: Content Strategy Recommendations
+        st.subheader("📝 Content Gap Themes")
+        st.caption("Common themes in gaps that suggest content opportunities")
+        
+        if len(competitors_only) > 0:
+            gap_queries_list = competitors_only['Query'].unique()
+            
+            # Extract common keywords from gap queries
+            from collections import Counter
+            import re
+            
+            # Tokenize and count keywords
+            all_words = []
+            for query in gap_queries_list:
+                # Remove common words and extract meaningful terms
+                words = re.findall(r'\b[a-z]{4,}\b', query.lower())
+                stop_words = {'what', 'best', 'that', 'this', 'with', 'from', 'for', 'the', 'and', 'are', 'have', 'your'}
+                meaningful_words = [w for w in words if w not in stop_words]
+                all_words.extend(meaningful_words)
+            
+            word_counts = Counter(all_words).most_common(15)
+            
+            if word_counts:
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    keywords_df = pd.DataFrame(word_counts, columns=['Keyword', 'Frequency'])
+                    
+                    fig = px.bar(
+                        keywords_df,
+                        x='Frequency',
+                        y='Keyword',
+                        orientation='h',
+                        title='Top Keywords in Gap Queries',
+                        color='Frequency',
+                        color_continuous_scale='Oranges'
+                    )
+                    fig.update_layout(yaxis={'categoryorder': 'total ascending'})
                     st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    st.markdown("#### 💡 Content Ideas")
+                    st.markdown("**Based on gap analysis, create content about:**")
+                    for keyword, freq in word_counts[:5]:
+                        st.markdown(f"- {keyword.title()} ({freq} gaps)")
+                    
+                    st.info("Focus content creation on these high-frequency gap themes")
+        
+        st.divider()
+        
+        # Detailed Query Breakdown (only critical gaps)
+        st.subheader("📋 Critical Gap Details")
+        st.caption("Deep dive into the most important gaps (side-by-side LLM comparison)")
+        
+        if len(competitors_only) > 0:
+            # Show only top 5 priority gaps in detail
+            top_gap_queries = priority_df.head(5)['Query'].str.replace('...', '').tolist()
             
-            # Side-by-side query comparison
-            st.markdown("---")
-            st.markdown("### 📋 Detailed Gap Analysis: Query-by-Query Breakdown")
-            
-            # Group by query to show all LLM responses together
-            gap_queries = competitors_only['Query'].unique()
-            
-            for query in gap_queries[:10]:  # Show first 10 critical gaps
+            for idx, query_short in enumerate(top_gap_queries, 1):
+                # Find the full query
+                matching_queries = [q for q in df_gap['Query'].unique() if query_short in q[:80]]
+                if not matching_queries:
+                    continue
+                
+                query = matching_queries[0]
                 query_responses = df_gap[df_gap['Query'] == query]
                 
                 # Check if ANY response mentions Weidert
                 weidert_mentioned_anywhere = query_responses['Weidert_Mentioned'].any()
                 
-                with st.expander(f"🔍 Query: {query[:100]}{'...' if len(query) > 100 else ''}", expanded=False):
-                    # Show query details
+                # Status indicator
+                if weidert_mentioned_anywhere:
+                    status_icon = "🟡"
+                    status_text = "Partial Gap"
+                else:
+                    status_icon = "🔴"
+                    status_text = "Complete Gap"
+                
+                with st.expander(f"{status_icon} Priority #{idx}: {query[:80]}{'...' if len(query) > 80 else ''}", expanded=(idx == 1)):
                     st.markdown(f"**Full Query:** {query}")
+                    st.markdown(f"**Status:** {status_text}")
                     
                     if weidert_mentioned_anywhere:
-                        st.info("ℹ️ Weidert IS mentioned by at least one LLM - opportunity to improve consistency")
+                        mentioned_by = query_responses[query_responses['Weidert_Mentioned']]['Source'].tolist()
+                        not_mentioned_by = query_responses[~query_responses['Weidert_Mentioned']]['Source'].tolist()
+                        st.info(f"✅ Mentioned by: {', '.join(mentioned_by)}")
+                        st.warning(f"❌ Missing from: {', '.join(not_mentioned_by)}")
                     else:
-                        st.error("⚠️ Weidert NOT mentioned by ANY LLM - critical visibility gap!")
+                        st.error("🔴 **CRITICAL**: Not mentioned by ANY LLM")
                     
                     st.markdown("---")
                     
-                    # Create columns for side-by-side comparison
-                    sources = query_responses['Source'].unique()
-                    cols = st.columns(min(len(sources), 3))
+                    # Show all 3 LLM responses
+                    cols = st.columns(3)
                     
                     for idx, (_, row) in enumerate(query_responses.iterrows()):
-                        col_idx = idx % 3
-                        
-                        with cols[col_idx]:
-                            # Header with status indicator
+                        with cols[idx]:
                             weidert_in_response = row['Weidert_Mentioned']
                             competitors_in_response = row['Has_Competitors']
                             
@@ -1565,215 +1795,49 @@ with tab4:
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Show response with highlighting
                             response_text = str(row['Response'])
+                            preview = response_text[:300] + "..." if len(response_text) > 300 else response_text
                             
-                            # Truncate if too long
-                            if len(response_text) > 500:
-                                response_text = response_text[:500] + "..."
+                            st.markdown(preview)
                             
-                            # Highlight competitors
-                            highlighted_text = response_text
                             if competitors_in_response:
-                                competitors_list = str(row['Competitors_Found']).split(', ')
-                                for comp in competitors_list:
-                                    if comp and comp != '':
-                                        highlighted_text = re.sub(
-                                            f'({re.escape(comp)})',
-                                            r'**\1**',
-                                            highlighted_text,
-                                            flags=re.IGNORECASE
-                                        )
-                            
-                            st.markdown(highlighted_text)
-                            
-                            # Show what's mentioned
-                            if competitors_in_response:
-                                st.markdown(f"**Competitors:** {row['Competitors_Found']}")
-                            
-                            if weidert_in_response:
-                                st.markdown("✅ **Weidert mentioned**")
-                            else:
-                                st.markdown("❌ **Weidert NOT mentioned**")
+                                st.warning(f"**Competitors:** {row['Competitors_Found']}")
                             
                             st.markdown("---")
-            
-            if len(gap_queries) > 10:
-                st.info(f"Showing 10 of {len(gap_queries)} critical gaps. Download full data for complete analysis.")
-        
         else:
-            st.success("🎉 Great news! No critical gaps found - Weidert appears whenever competitors do!")
+            st.success("🎉 No critical gaps found!")
         
         st.divider()
         
-        # Where Weidert IS winning
-        st.subheader("🏆 SUCCESS STORIES: Weidert Mentioned, Competitors Not")
-        st.caption("These queries show where Weidert has strong visibility advantage")
-        
-        if len(weidert_only) > 0:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                success_by_source = weidert_only.groupby('Source').size()
-                fig = px.bar(x=success_by_source.index, y=success_by_source.values,
-                           title="Success Stories by LLM Source",
-                           labels={'x': 'Source', 'y': 'Count'},
-                           color_discrete_sequence=['#28a745'])
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Position analysis for these wins
-                if 'Weidert_Position' not in weidert_only.columns:
-                    position_analysis = weidert_only['Response'].apply(lambda x: analyze_position(x, "Weidert"))
-                    weidert_only['Weidert_Position'] = [p[0] for p in position_analysis]
-                
-                position_dist = weidert_only['Weidert_Position'].value_counts()
-                fig = px.pie(values=position_dist.values, names=position_dist.index,
-                           title="Weidert Position in Success Stories",
-                           color_discrete_sequence=['#28a745', '#20c997', '#17a2b8'])
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Show example success queries
-            st.markdown("**Example Success Queries:**")
-            for i, query in enumerate(weidert_only['Query'].unique()[:5], 1):
-                st.markdown(f"{i}. {query}")
-        
-        else:
-            st.info("No queries where Weidert is the only agency mentioned.")
-        
-        st.divider()
-        
-        # Competitive battlegrounds
-        st.subheader("⚔️ COMPETITIVE BATTLEGROUNDS: Both Mentioned")
-        st.caption("Queries where Weidert competes directly with other agencies")
-        
-        if len(both_mentioned) > 0:
-            # Position comparison in competitive scenarios
-            if 'Weidert_Position' not in both_mentioned.columns:
-                position_analysis = both_mentioned['Response'].apply(lambda x: analyze_position(x, "Weidert"))
-                both_mentioned['Weidert_Position'] = [p[0] for p in position_analysis]
-                both_mentioned['Weidert_Sentence_Num'] = [p[1] for p in position_analysis]
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                position_in_competitive = both_mentioned['Weidert_Position'].value_counts()
-                fig = px.bar(x=position_in_competitive.index, y=position_in_competitive.values,
-                           title="Weidert's Position in Competitive Responses",
-                           labels={'x': 'Position', 'y': 'Count'},
-                           color_discrete_sequence=['#ffc107'])
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Average sentence position vs competitors
-                avg_weidert_position = both_mentioned['Weidert_Sentence_Num'].mean()
-                
-                st.markdown(f"""
-                <div style="background: #ffc107; padding: 1rem; border-radius: 10px; color: white; text-align: center;">
-                    <div style="font-size: 1.5rem; font-weight: bold;">{avg_weidert_position:.1f}</div>
-                    <div style="font-size: 0.9rem;">Avg Sentence Position</div>
-                    <div style="font-size: 0.8rem; opacity: 0.9;">Lower is better</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.markdown("")
-                st.markdown("**Interpretation:**")
-                if avg_weidert_position <= 3:
-                    st.success("✅ Excellent - Weidert appears early in responses")
-                elif avg_weidert_position <= 5:
-                    st.info("🟡 Good - Weidert appears in first half of responses")
-                else:
-                    st.warning("⚠️ Opportunity - Weidert appears late in responses")
-            
-            # Show which competitors Weidert is fighting against
-            st.markdown("**Most Frequent Competitors in Battlegrounds:**")
-            all_battle_comps = []
-            for comp_str in both_mentioned['Competitors_Found']:
-                if comp_str and str(comp_str) != '':
-                    all_battle_comps.extend(str(comp_str).split(', '))
-            
-            if all_battle_comps:
-                comp_battle_counts = pd.Series(all_battle_comps).value_counts().head(5)
-                for comp, count in comp_battle_counts.items():
-                    st.markdown(f"• **{comp}**: {count} co-mentions")
-        
-        else:
-            st.info("No queries where both Weidert and competitors are mentioned together.")
-        
-        st.divider()
-        
-        # Action Items
-        st.subheader("🎯 Recommended Actions")
-        st.caption("Based on the gap analysis, here's what Weidert should focus on")
-        
-        actions = []
-        
-        if len(competitors_only) > 0:
-            gap_rate = (len(competitors_only) / len(df_gap) * 100)
-            actions.append({
-                'priority': '🔴 HIGH',
-                'action': f'Address {len(competitors_only)} critical visibility gaps ({gap_rate:.1f}% of queries)',
-                'detail': f'Create content targeting these queries where competitors appear but Weidert doesn\'t'
-            })
-            
-            # Find most common competitors in gaps
-            if all_comp_mentions:
-                top_gap_comp = pd.Series(all_comp_mentions).value_counts().index[0]
-                actions.append({
-                    'priority': '🔴 HIGH',
-                    'action': f'Competitive positioning against {top_gap_comp}',
-                    'detail': f'{top_gap_comp} appears most often in gaps - create comparison content'
-                })
-        
-        if len(both_mentioned) > 0 and avg_weidert_position > 5:
-            actions.append({
-                'priority': '🟡 MEDIUM',
-                'action': 'Improve early mention positioning',
-                'detail': 'Weidert appears late in competitive responses - strengthen thought leadership'
-            })
-        
-        if len(weidert_only) > 0:
-            success_rate = (len(weidert_only) / len(df_gap) * 100)
-            actions.append({
-                'priority': '🟢 MAINTAIN',
-                'action': f'Protect {len(weidert_only)} success stories ({success_rate:.1f}% of queries)',
-                'detail': 'Continue reinforcing content in areas where Weidert has exclusive visibility'
-            })
-        
-        if not actions:
-            actions.append({
-                'priority': '🟢 GOOD',
-                'action': 'Maintain current visibility levels',
-                'detail': 'Performance is strong - monitor for changes and continue current strategies'
-            })
-        
-        for action in actions:
-            st.markdown(f"""
-            <div style="border-left: 4px solid {'#dc3545' if 'HIGH' in action['priority'] else '#ffc107' if 'MEDIUM' in action['priority'] else '#28a745'}; 
-                        padding: 1rem; margin: 0.5rem 0; background: #f8f9fa; border-radius: 5px;">
-                <div style="font-weight: bold; margin-bottom: 0.5rem;">{action['priority']} {action['action']}</div>
-                <div style="color: #666;">{action['detail']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Download gap analysis
-        st.divider()
+        # Export
         st.subheader("📥 Export Gap Analysis")
         
-        # Create detailed export
-        export_data = df_gap.copy()
-        export_data['Category'] = 'Neither'
-        export_data.loc[export_data['Weidert_Mentioned'] & ~export_data['Has_Competitors'], 'Category'] = 'Weidert Only'
-        export_data.loc[~export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Category'] = 'Competitors Only (CRITICAL GAP)'
-        export_data.loc[export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Category'] = 'Both Mentioned'
+        col1, col2 = st.columns(2)
         
-        st.download_button(
-            "📥 Download Full Gap Analysis CSV",
-            export_data.to_csv(index=False),
-            "weidert_gap_analysis.csv",
-            "text/csv",
-            help="Download complete gap analysis with all responses categorized"
-        )
+        with col1:
+            # Export full gap data
+            export_data = df_gap.copy()
+            export_data['Category'] = 'Neither'
+            export_data.loc[export_data['Weidert_Mentioned'] & ~export_data['Has_Competitors'], 'Category'] = 'Weidert Only'
+            export_data.loc[~export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Category'] = 'Critical Gap'
+            export_data.loc[export_data['Weidert_Mentioned'] & export_data['Has_Competitors'], 'Category'] = 'Competitive'
+            
+            st.download_button(
+                "📥 Download Full Gap Analysis",
+                export_data.to_csv(index=False),
+                "weidert_gap_analysis.csv",
+                "text/csv"
+            )
+        
+        with col2:
+            # Export priority list
+            if len(competitors_only) > 0 and 'priority_df' in locals():
+                st.download_button(
+                    "📥 Download Priority Gap List",
+                    priority_df.to_csv(index=False),
+                    "weidert_priority_gaps.csv",
+                    "text/csv"
+                )
     
     else:
         st.info("Please run queries in Tab 1 or upload a CSV file to perform gap analysis.")
