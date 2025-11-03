@@ -533,6 +533,78 @@ Contact your admin to clear service account storage or increase quota."""
         error_details = traceback.format_exc()
         return False, f"Unexpected error: {str(e)}\n\nDetails:\n{error_details}"
 
+def load_data_from_google_sheets(spreadsheet_url):
+    """Load data from Google Sheets for dashboard analysis"""
+    try:
+        # Check if gspread is available
+        try:
+            import gspread
+            from google.oauth2.service_account import Credentials
+        except ImportError as e:
+            return False, None, f"Missing required packages: {str(e)}"
+        
+        # Define the scope
+        scope = ['https://spreadsheets.google.com/feeds',
+                 'https://www.googleapis.com/auth/drive']
+        
+        # Get credentials from Streamlit secrets
+        if "gcp_service_account" not in st.secrets:
+            return False, None, "Google Sheets credentials not found in secrets"
+        
+        try:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        except Exception as e:
+            return False, None, f"Error loading credentials: {str(e)}"
+        
+        # Authorize and get the client
+        try:
+            client = gspread.authorize(creds)
+        except Exception as e:
+            return False, None, f"Authentication failed: {str(e)}"
+        
+        # Open the spreadsheet
+        try:
+            spreadsheet = client.open_by_url(spreadsheet_url)
+            worksheet = spreadsheet.sheet1
+        except Exception as e:
+            return False, None, f"Could not open spreadsheet: {str(e)}\n\nMake sure you've shared it with: {creds_dict.get('client_email', 'the service account')}"
+        
+        # Get all data
+        try:
+            data = worksheet.get_all_values()
+            if not data or len(data) < 2:
+                return False, None, "No data found in the sheet"
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(data[1:], columns=data[0])
+            
+            # Convert Upload_Date to datetime if it exists
+            if 'Upload_Date' in df.columns:
+                df['Upload_Date'] = pd.to_datetime(df['Upload_Date'], errors='coerce')
+            
+            # Convert numeric columns
+            numeric_columns = ['Response_Time', 'Weidert_Sentence_Num']
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Convert boolean columns
+            bool_columns = ['Branded_Query', 'Weidert_Mentioned', 'Weidert_URL_Cited']
+            for col in bool_columns:
+                if col in df.columns:
+                    df[col] = df[col].map({'True': True, 'False': False, True: True, False: False})
+            
+            return True, df, "Data loaded successfully"
+            
+        except Exception as e:
+            return False, None, f"Failed to read data: {str(e)}"
+    
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        return False, None, f"Unexpected error: {str(e)}\n\nDetails:\n{error_details}"
+
 # ─── PARALLEL PROCESSING ─────────────────────────────────────────────────────
 def get_response_with_source(source_func_tuple):
     """Helper function with error handling and timing"""
@@ -575,11 +647,12 @@ def process_queries_parallel(queries):
     return results
 
 # ─── MAIN APPLICATION TABS ─────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Multi-LLM Response Generator", 
     "Search Visibility Analysis", 
     "Competitor Comparison", 
-    "Gap Analysis & Opportunities"
+    "Gap Analysis & Opportunities",
+    "📊 Time-Series Dashboard"
 ])
 
 # ─── TAB 1: MULTI-LLM GENERATOR ─────────────────────────────────────────────
@@ -2048,6 +2121,364 @@ with tab4:
     
     else:
         st.info("Please run queries in Tab 1 or upload a CSV file to perform gap analysis.")
+
+# ─── TAB 5: TIME-SERIES DASHBOARD ───────────────────────────────────────────
+with tab5:
+    st.markdown("### 📊 Time-Series Dashboard")
+    st.caption("Track Weidert's search visibility performance over time")
+    
+    # Input section for Google Sheet URL
+    st.markdown("#### 📥 Data Source")
+    
+    dashboard_sheet_url = st.text_input(
+        "Google Sheet URL",
+        placeholder="https://docs.google.com/spreadsheets/d/...",
+        help="Paste the URL of the Google Sheet where your historical data is stored",
+        key="dashboard_sheet_url"
+    )
+    
+    col1, col2 = st.columns([1, 4])
+    
+    with col1:
+        load_data_btn = st.button("📊 Load Data", type="primary")
+    
+    with col2:
+        if dashboard_sheet_url:
+            st.caption(f"Sheet configured: {dashboard_sheet_url[:50]}...")
+    
+    # Load and display data
+    if load_data_btn or ('dashboard_data' in st.session_state and st.session_state.get('dashboard_sheet_url_cached') == dashboard_sheet_url):
+        if not dashboard_sheet_url:
+            st.warning("⚠️ Please enter a Google Sheet URL")
+        else:
+            with st.spinner("Loading data from Google Sheets..."):
+                success, df_dashboard, message = load_data_from_google_sheets(dashboard_sheet_url)
+                
+                if success:
+                    # Cache the data
+                    st.session_state.dashboard_data = df_dashboard
+                    st.session_state.dashboard_sheet_url_cached = dashboard_sheet_url
+                    
+                    st.success(f"✅ {message} - Loaded {len(df_dashboard)} rows")
+                else:
+                    st.error(f"❌ Failed to load data:")
+                    st.code(message, language="text")
+                    st.stop()
+    
+    # Display dashboard if data is loaded
+    if 'dashboard_data' in st.session_state:
+        df_dash = st.session_state.dashboard_data.copy()
+        
+        # Validate required columns
+        if 'Upload_Date' not in df_dash.columns:
+            st.error("❌ This sheet doesn't have an 'Upload_Date' column. Please use data from the updated upload function.")
+            st.stop()
+        
+        # Remove rows with invalid dates
+        df_dash = df_dash[df_dash['Upload_Date'].notna()]
+        
+        if len(df_dash) == 0:
+            st.warning("⚠️ No valid data found with Upload_Date")
+            st.stop()
+        
+        # Date range filter
+        st.markdown("---")
+        st.markdown("#### 🗓️ Date Range Filter")
+        
+        col1, col2 = st.columns(2)
+        
+        min_date = df_dash['Upload_Date'].min().date()
+        max_date = df_dash['Upload_Date'].max().date()
+        
+        with col1:
+            start_date = st.date_input("Start Date", min_date, min_value=min_date, max_value=max_date)
+        
+        with col2:
+            end_date = st.date_input("End Date", max_date, min_value=min_date, max_value=max_date)
+        
+        # Filter data by date range
+        df_dash = df_dash[
+            (df_dash['Upload_Date'].dt.date >= start_date) & 
+            (df_dash['Upload_Date'].dt.date <= end_date)
+        ]
+        
+        if len(df_dash) == 0:
+            st.warning("⚠️ No data in selected date range")
+            st.stop()
+        
+        st.markdown("---")
+        
+        # Summary metrics
+        st.markdown("## 📈 Overall Performance Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            total_uploads = df_dash['Upload_Date'].nunique()
+            st.metric("Total Upload Sessions", f"{total_uploads}")
+        
+        with col2:
+            total_queries = len(df_dash)
+            st.metric("Total Responses", f"{total_queries}")
+        
+        with col3:
+            date_range_days = (end_date - start_date).days + 1
+            st.metric("Date Range", f"{date_range_days} days")
+        
+        with col4:
+            if 'Weidert_Mentioned' in df_dash.columns:
+                overall_mention_rate = (df_dash['Weidert_Mentioned'].sum() / len(df_dash) * 100)
+                st.metric("Overall Mention Rate", f"{overall_mention_rate:.1f}%")
+        
+        st.markdown("---")
+        
+        # Group data by upload date for time series
+        df_dash['Upload_Date_Only'] = df_dash['Upload_Date'].dt.date
+        
+        # Calculate metrics by date
+        metrics_by_date = df_dash.groupby('Upload_Date_Only').agg({
+            'Weidert_Mentioned': lambda x: (x.sum() / len(x) * 100) if 'Weidert_Mentioned' in df_dash.columns else 0,
+            'Response_Time': 'mean',
+            'Query': 'count'
+        }).reset_index()
+        
+        metrics_by_date.columns = ['Date', 'Mention_Rate', 'Avg_Response_Time', 'Response_Count']
+        
+        # Calculate additional metrics by date
+        if 'Weidert_Position' in df_dash.columns:
+            first_third_by_date = df_dash.groupby('Upload_Date_Only').apply(
+                lambda x: (x['Weidert_Position'] == 'First Third').sum() / len(x) * 100
+            ).reset_index(name='First_Third_Rate')
+            metrics_by_date = metrics_by_date.merge(first_third_by_date, on='Date', how='left')
+        
+        if 'Context_Type' in df_dash.columns:
+            positive_by_date = df_dash.groupby('Upload_Date_Only').apply(
+                lambda x: (x['Context_Type'] == 'Positive').sum() / len(x) * 100
+            ).reset_index(name='Positive_Rate')
+            metrics_by_date = metrics_by_date.merge(positive_by_date, on='Date', how='left')
+        
+        # TIME SERIES CHARTS
+        st.markdown("## 📊 Time-Series Analysis")
+        
+        # Chart 1: Weidert Mention Rate Over Time
+        st.markdown("### 1️⃣ Weidert Mention Rate Trend")
+        st.caption("Shows the percentage of LLM responses that mention Weidert over time")
+        
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(
+            x=metrics_by_date['Date'],
+            y=metrics_by_date['Mention_Rate'],
+            mode='lines+markers',
+            name='Mention Rate',
+            line=dict(color='#e64626', width=3),
+            marker=dict(size=8)
+        ))
+        
+        # Add trend line
+        if len(metrics_by_date) > 1:
+            z = np.polyfit(range(len(metrics_by_date)), metrics_by_date['Mention_Rate'], 1)
+            p = np.poly1d(z)
+            fig1.add_trace(go.Scatter(
+                x=metrics_by_date['Date'],
+                y=p(range(len(metrics_by_date))),
+                mode='lines',
+                name='Trend',
+                line=dict(color='gray', width=2, dash='dash')
+            ))
+        
+        fig1.update_layout(
+            xaxis_title="Date",
+            yaxis_title="Mention Rate (%)",
+            hovermode='x unified',
+            height=400
+        )
+        
+        st.plotly_chart(fig1, use_container_width=True)
+        
+        # Show trend direction
+        if len(metrics_by_date) > 1:
+            first_value = metrics_by_date['Mention_Rate'].iloc[0]
+            last_value = metrics_by_date['Mention_Rate'].iloc[-1]
+            change = last_value - first_value
+            
+            if change > 0:
+                st.success(f"📈 **Trending UP**: Mention rate increased by {abs(change):.1f}% from {first_value:.1f}% to {last_value:.1f}%")
+            elif change < 0:
+                st.error(f"📉 **Trending DOWN**: Mention rate decreased by {abs(change):.1f}% from {first_value:.1f}% to {last_value:.1f}%")
+            else:
+                st.info(f"➡️ **Stable**: Mention rate remained at {first_value:.1f}%")
+        
+        st.markdown("---")
+        
+        # Chart 2: First Third Position Rate
+        if 'First_Third_Rate' in metrics_by_date.columns:
+            st.markdown("### 2️⃣ First Third Position Rate Trend")
+            st.caption("Shows how often Weidert appears in the first third of responses (early mentions are better)")
+            
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(
+                x=metrics_by_date['Date'],
+                y=metrics_by_date['First_Third_Rate'],
+                mode='lines+markers',
+                name='First Third Rate',
+                line=dict(color='#28a745', width=3),
+                marker=dict(size=8)
+            ))
+            
+            fig2.update_layout(
+                xaxis_title="Date",
+                yaxis_title="First Third Position Rate (%)",
+                hovermode='x unified',
+                height=400
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True)
+            
+            st.markdown("---")
+        
+        # Chart 3: Positive Context Rate
+        if 'Positive_Rate' in metrics_by_date.columns:
+            st.markdown("### 3️⃣ Positive Context Rate Trend")
+            st.caption("Shows the percentage of Weidert mentions with positive sentiment")
+            
+            fig3 = go.Figure()
+            fig3.add_trace(go.Scatter(
+                x=metrics_by_date['Date'],
+                y=metrics_by_date['Positive_Rate'],
+                mode='lines+markers',
+                name='Positive Context Rate',
+                line=dict(color='#007bff', width=3),
+                marker=dict(size=8)
+            ))
+            
+            fig3.update_layout(
+                xaxis_title="Date",
+                yaxis_title="Positive Context Rate (%)",
+                hovermode='x unified',
+                height=400
+            )
+            
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            st.markdown("---")
+        
+        # Chart 4: Multi-Metric Comparison
+        st.markdown("### 4️⃣ Multi-Metric Performance Dashboard")
+        st.caption("Compare all key metrics on one chart")
+        
+        fig4 = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=('Mention Rate (%)', 'First Third Rate (%)', 
+                          'Positive Context (%)', 'Response Count'),
+            vertical_spacing=0.12,
+            horizontal_spacing=0.1
+        )
+        
+        # Mention Rate
+        fig4.add_trace(
+            go.Scatter(x=metrics_by_date['Date'], y=metrics_by_date['Mention_Rate'],
+                      mode='lines+markers', name='Mention Rate',
+                      line=dict(color='#e64626')),
+            row=1, col=1
+        )
+        
+        # First Third Rate
+        if 'First_Third_Rate' in metrics_by_date.columns:
+            fig4.add_trace(
+                go.Scatter(x=metrics_by_date['Date'], y=metrics_by_date['First_Third_Rate'],
+                          mode='lines+markers', name='First Third',
+                          line=dict(color='#28a745')),
+                row=1, col=2
+            )
+        
+        # Positive Context Rate
+        if 'Positive_Rate' in metrics_by_date.columns:
+            fig4.add_trace(
+                go.Scatter(x=metrics_by_date['Date'], y=metrics_by_date['Positive_Rate'],
+                          mode='lines+markers', name='Positive',
+                          line=dict(color='#007bff')),
+                row=2, col=1
+            )
+        
+        # Response Count
+        fig4.add_trace(
+            go.Bar(x=metrics_by_date['Date'], y=metrics_by_date['Response_Count'],
+                   name='Response Count', marker_color='#6c757d'),
+            row=2, col=2
+        )
+        
+        fig4.update_layout(height=700, showlegend=False)
+        
+        st.plotly_chart(fig4, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Performance by LLM Source
+        if 'Source' in df_dash.columns:
+            st.markdown("### 5️⃣ Performance by LLM Platform")
+            st.caption("Compare how different LLMs mention Weidert over time")
+            
+            mention_by_source_date = df_dash.groupby(['Upload_Date_Only', 'Source']).apply(
+                lambda x: (x['Weidert_Mentioned'].sum() / len(x) * 100) if 'Weidert_Mentioned' in x.columns else 0
+            ).reset_index(name='Mention_Rate')
+            
+            fig5 = px.line(
+                mention_by_source_date,
+                x='Upload_Date_Only',
+                y='Mention_Rate',
+                color='Source',
+                markers=True,
+                title='Mention Rate by LLM Platform Over Time'
+            )
+            
+            fig5.update_layout(
+                xaxis_title="Date",
+                yaxis_title="Mention Rate (%)",
+                height=400
+            )
+            
+            st.plotly_chart(fig5, use_container_width=True)
+            
+            st.markdown("---")
+        
+        # Data table
+        st.markdown("### 📋 Daily Metrics Table")
+        st.caption("Detailed breakdown of metrics by date")
+        
+        st.dataframe(
+            metrics_by_date.style.background_gradient(subset=['Mention_Rate'], cmap='RdYlGn'),
+            use_container_width=True,
+            height=400
+        )
+        
+        # Export dashboard data
+        st.markdown("---")
+        st.download_button(
+            "📥 Download Dashboard Data (CSV)",
+            metrics_by_date.to_csv(index=False),
+            "weidert_dashboard_metrics.csv",
+            "text/csv",
+            help="Download the aggregated metrics for further analysis"
+        )
+    
+    else:
+        st.info("👆 Enter your Google Sheet URL above and click 'Load Data' to view the dashboard")
+        
+        st.markdown("---")
+        st.markdown("### 📖 How to Use This Dashboard")
+        st.markdown("""
+        1. **Upload data regularly** from Tab 1 to build your time-series dataset
+        2. **Paste your Google Sheet URL** in the input box above
+        3. **Click 'Load Data'** to load historical data
+        4. **Analyze trends** to see if Weidert's visibility is improving
+        
+        **Key Metrics Tracked:**
+        - 📊 **Mention Rate**: How often Weidert appears in LLM responses
+        - 🥇 **First Third Rate**: How often Weidert appears early in responses
+        - 😊 **Positive Context**: Sentiment of Weidert mentions
+        - ⏱️ **Response Time**: Average LLM response speed
+        - 🏢 **By Platform**: Performance across different LLMs
+        """)
 
 # ─── FOOTER ─────────────────────────────────────────────────────────────────
 st.markdown("---")
