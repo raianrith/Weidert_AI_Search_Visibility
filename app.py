@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import tempfile
 from datetime import datetime, date
@@ -630,8 +630,8 @@ def get_response_with_source(source_func_tuple):
             "Timestamp": datetime.now().isoformat()
         }
 
-def process_queries_parallel(queries):
-    """Parallel processing of queries"""
+def process_queries_parallel(queries, progress_callback=None):
+    """Parallel processing of queries with optional progress tracking"""
     all_tasks = []
     
     for q in queries:
@@ -641,8 +641,23 @@ def process_queries_parallel(queries):
             ("Perplexity", get_perplexity_response, q)
         ])
     
+    results = []
+    total_tasks = len(all_tasks)
+    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(executor.map(get_response_with_source, all_tasks))
+        # Submit all tasks
+        future_to_task = {executor.submit(get_response_with_source, task): task for task in all_tasks}
+        
+        # Collect results as they complete
+        completed = 0
+        for future in as_completed(future_to_task):
+            result = future.result()
+            results.append(result)
+            completed += 1
+            
+            # Call progress callback if provided
+            if progress_callback:
+                progress_callback(completed, total_tasks)
     
     return results
 
@@ -701,12 +716,31 @@ with tab1:
         if not qs:
             st.warning("Please enter at least one query or use predefined queries.")
         else:
-            with st.spinner(f"Gathering responses for {len(qs)} queries..."):
-                start_time = time.time()
-                results = process_queries_parallel(qs)
-                end_time = time.time()
-                
-                st.success(f"✅ Completed {len(results)} API calls in {end_time - start_time:.1f} seconds!")
+            total_calls = len(qs) * 3  # 3 LLMs per query
+            
+            st.info(f"🚀 Starting {len(qs)} queries across 3 LLMs = {total_calls} API calls")
+            st.caption("This may take a few minutes. Please don't close the browser...")
+            
+            # Progress bar and status
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Progress callback function
+            def update_progress(completed, total):
+                progress_percent = int((completed / total) * 100)
+                progress_bar.progress(progress_percent)
+                status_text.text(f"Processing... {completed}/{total} API calls completed ({progress_percent}%)")
+            
+            start_time = time.time()
+            results = process_queries_parallel(qs, progress_callback=update_progress)
+            end_time = time.time()
+            
+            # Final update
+            progress_bar.progress(100)
+            status_text.text(f"✅ Completed all {total_calls} API calls!")
+            
+            time.sleep(0.5)  # Brief pause to show completion
+            st.success(f"✅ Completed {len(results)} API calls in {end_time - start_time:.1f} seconds!")
 
             # Process results
             df = pd.DataFrame(results)
