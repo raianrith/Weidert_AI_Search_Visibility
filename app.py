@@ -421,8 +421,8 @@ def extract_competitors_detailed(text):
     return found_competitors, positions
 
 # ─── GOOGLE SHEETS INTEGRATION ─────────────────────────────────────────────
-def upload_to_google_sheets(df, sheet_name=None):
-    """Upload dataframe to Google Sheets"""
+def upload_to_google_sheets(df, spreadsheet_url=None):
+    """Upload dataframe to Google Sheets - appends to existing sheet or uses provided URL"""
     try:
         # Check if gspread is available
         try:
@@ -451,31 +451,53 @@ def upload_to_google_sheets(df, sheet_name=None):
         except Exception as e:
             return False, f"Authentication failed: {str(e)}\n\nMake sure Google Sheets API and Google Drive API are enabled in your Google Cloud project."
         
-        # Create a new spreadsheet or open existing one
-        if sheet_name is None:
-            sheet_name = f"Weidert LLM Results {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        # Try to use provided spreadsheet URL or find/create master sheet
+        if spreadsheet_url:
+            # User provided a specific sheet URL
+            try:
+                spreadsheet = client.open_by_url(spreadsheet_url)
+                worksheet = spreadsheet.sheet1
+            except Exception as e:
+                return False, f"Could not open spreadsheet at URL: {spreadsheet_url}\n\nError: {str(e)}\n\nMake sure you've shared this sheet with: {creds_dict.get('client_email', 'the service account')}"
+        else:
+            # Use master sheet approach
+            master_sheet_name = "Weidert LLM Results - Master"
+            
+            try:
+                # Try to open existing master sheet
+                spreadsheet = client.open(master_sheet_name)
+                worksheet = spreadsheet.sheet1
+            except gspread.SpreadsheetNotFound:
+                # Master sheet doesn't exist, return error with instructions
+                return False, f"""Master spreadsheet not found. Please create one:
+
+OPTION 1 - Create in your own Google Drive (RECOMMENDED):
+1. Go to Google Sheets: https://sheets.google.com
+2. Create a new spreadsheet named "Weidert LLM Results - Master" (or any name)
+3. Share it with: {creds_dict.get('client_email', 'the service account')}
+4. Give it "Editor" permissions
+5. Copy the URL and paste it in the text box below the upload button
+
+OPTION 2 - Have the app create it once (uses service account storage):
+Contact your admin to clear service account storage or increase quota."""
         
+        # Create a new sheet tab with timestamp
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         try:
-            # Try to create new spreadsheet
-            spreadsheet = client.create(sheet_name)
-            worksheet = spreadsheet.sheet1
+            new_worksheet = spreadsheet.add_worksheet(title=timestamp, rows=len(df)+1, cols=len(df.columns))
         except Exception as e:
-            return False, f"Failed to create spreadsheet: {str(e)}\n\nMake sure the service account has permission to create files."
+            # If we can't create a new tab, just use the first one
+            new_worksheet = worksheet
+            new_worksheet.clear()
         
         # Upload the dataframe
         try:
-            worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+            new_worksheet.update([df.columns.values.tolist()] + df.values.tolist())
         except Exception as e:
             return False, f"Failed to upload data: {str(e)}"
         
         # Get the spreadsheet URL
         spreadsheet_url = spreadsheet.url
-        
-        # Make spreadsheet accessible
-        try:
-            spreadsheet.share('', perm_type='anyone', role='reader')
-        except:
-            pass  # Ignore if sharing fails
         
         return True, spreadsheet_url
     
@@ -660,9 +682,19 @@ with tab1:
             )
         
         with col2:
+            # Google Sheet URL input (optional)
+            sheet_url_input = st.text_input(
+                "Google Sheet URL (optional)",
+                placeholder="https://docs.google.com/spreadsheets/d/...",
+                help="Leave empty to use default master sheet, or paste your own Google Sheet URL",
+                key="sheet_url_input"
+            )
+            
             if st.button("📊 Upload to Google Sheets", key="upload_to_sheets"):
                 with st.spinner("Uploading to Google Sheets..."):
-                    success, result = upload_to_google_sheets(df)
+                    # Use provided URL or None (will use master sheet)
+                    url_to_use = sheet_url_input.strip() if sheet_url_input and sheet_url_input.strip() else None
+                    success, result = upload_to_google_sheets(df, spreadsheet_url=url_to_use)
                     
                     if success:
                         st.success("✅ Successfully uploaded to Google Sheets!")
