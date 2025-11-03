@@ -481,19 +481,14 @@ OPTION 1 - Create in your own Google Drive (RECOMMENDED):
 OPTION 2 - Have the app create it once (uses service account storage):
 Contact your admin to clear service account storage or increase quota."""
         
-        # Create a new sheet tab with timestamp
-        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        try:
-            new_worksheet = spreadsheet.add_worksheet(title=timestamp, rows=len(df)+1, cols=len(df.columns))
-        except Exception as e:
-            # If we can't create a new tab, just use the first one
-            new_worksheet = worksheet
-            new_worksheet.clear()
-        
-        # Upload the dataframe
+        # Append data to the existing sheet
         try:
             # Convert dataframe to ensure all values are serializable
             df_copy = df.copy()
+            
+            # Add upload timestamp column at the beginning
+            upload_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            df_copy.insert(0, 'Upload_Date', upload_timestamp)
             
             # Convert date columns to strings
             for col in df_copy.columns:
@@ -503,11 +498,28 @@ Contact your admin to clear service account storage or increase quota."""
                 elif 'datetime' in str(df_copy[col].dtype) or 'date' in str(df_copy[col].dtype):
                     df_copy[col] = df_copy[col].astype(str)
             
-            # Prepare data for upload
-            data_to_upload = [df_copy.columns.values.tolist()] + df_copy.values.tolist()
+            # Check if sheet is empty or needs header
+            existing_data = worksheet.get_all_values()
             
-            # Upload to Google Sheets
-            new_worksheet.update(data_to_upload)
+            if not existing_data or len(existing_data) == 0:
+                # Sheet is empty, add headers and data
+                data_to_upload = [df_copy.columns.values.tolist()] + df_copy.values.tolist()
+                worksheet.update('A1', data_to_upload)
+            else:
+                # Sheet has data, check if headers match
+                existing_headers = existing_data[0]
+                new_headers = df_copy.columns.values.tolist()
+                
+                if existing_headers != new_headers:
+                    # Headers don't match, clear and start fresh
+                    worksheet.clear()
+                    data_to_upload = [df_copy.columns.values.tolist()] + df_copy.values.tolist()
+                    worksheet.update('A1', data_to_upload)
+                else:
+                    # Headers match, append new rows
+                    next_row = len(existing_data) + 1
+                    worksheet.append_rows(df_copy.values.tolist())
+                    
         except Exception as e:
             return False, f"Failed to upload data: {str(e)}"
         
