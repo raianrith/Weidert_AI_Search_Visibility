@@ -589,11 +589,19 @@ def load_data_from_google_sheets(spreadsheet_url):
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Convert boolean columns
+            # Convert boolean columns (handle various string formats from Google Sheets)
             bool_columns = ['Branded_Query', 'Weidert_Mentioned', 'Weidert_URL_Cited']
             for col in bool_columns:
                 if col in df.columns:
-                    df[col] = df[col].map({'True': True, 'False': False, True: True, False: False})
+                    # Convert string booleans to actual booleans (case-insensitive)
+                    df[col] = df[col].astype(str).str.upper().map({
+                        'TRUE': True, 
+                        'FALSE': False, 
+                        'T': True, 
+                        'F': False,
+                        '1': True,
+                        '0': False
+                    })
             
             return True, df, "Data loaded successfully"
             
