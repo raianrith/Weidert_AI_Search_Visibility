@@ -2249,12 +2249,14 @@ with tab5:
             first_third_by_date = df_dash.groupby('Upload_Date_Only').apply(
                 lambda x: (x['Weidert_Position'] == 'First Third').sum() / len(x) * 100
             ).reset_index(name='First_Third_Rate')
+            first_third_by_date.columns = ['Date', 'First_Third_Rate']
             metrics_by_date = metrics_by_date.merge(first_third_by_date, on='Date', how='left')
         
         if 'Context_Type' in df_dash.columns:
             positive_by_date = df_dash.groupby('Upload_Date_Only').apply(
                 lambda x: (x['Context_Type'] == 'Positive').sum() / len(x) * 100
             ).reset_index(name='Positive_Rate')
+            positive_by_date.columns = ['Date', 'Positive_Rate']
             metrics_by_date = metrics_by_date.merge(positive_by_date, on='Date', how='left')
         
         # TIME SERIES CHARTS
