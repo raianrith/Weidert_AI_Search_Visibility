@@ -616,58 +616,61 @@ with tab1:
             # Store in session state
             st.session_state.latest_results = df
             
-            # Display results
-            st.subheader("📊 Analysis Results")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                mention_rate = (df['Weidert_Mentioned'].sum() / len(df) * 100)
-                st.metric("Weidert Mention Rate", f"{mention_rate:.1f}%")
-            
-            with col2:
-                avg_response_time = df['Response_Time'].mean()
-                st.metric("Avg Response Time", f"{avg_response_time:.1f}s")
-            
-            with col3:
-                first_position_rate = (df['Weidert_Position'] == 'First Third').sum() / len(df) * 100
-                st.metric("First Third Mentions", f"{first_position_rate:.1f}%")
-            
-            with col4:
-                positive_rate = (df['Context_Type'] == 'Positive').sum() / len(df) * 100
-                st.metric("Positive Context", f"{positive_rate:.1f}%")
-            
-            # Detailed table
-            st.subheader("📋 Detailed Results")
-            display_cols = ['Query', 'Source', 'Response', 'Response_Time', 'Weidert_Position', 'Context_Type']
-            st.dataframe(df[display_cols], use_container_width=True, height=400)
-            
-            # Download and Upload buttons
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.download_button(
-                    "📥 Download Results (CSV)",
-                    df.to_csv(index=False),
-                    "weidert_llm_results.csv",
-                    "text/csv"
-                )
-            
-            with col2:
-                if st.button("📊 Upload to Google Sheets", key="upload_to_sheets"):
-                    st.info("🔄 Starting upload process...")
-                    with st.spinner("Uploading to Google Sheets..."):
-                        success, result = upload_to_google_sheets(df)
-                        
-                        if success:
-                            st.success("✅ Successfully uploaded to Google Sheets!")
-                            st.markdown(f"**[Click here to open the spreadsheet]({result})**")
-                            st.balloons()
-                        else:
-                            st.error(f"❌ Upload failed:")
-                            st.code(result, language="text")
-            
         st.session_state.run_triggered = False
+    
+    # Display results if they exist (separate from run_triggered logic)
+    if 'latest_results' in st.session_state and st.session_state.latest_results is not None:
+        df = st.session_state.latest_results
+        
+        # Display results
+        st.subheader("📊 Analysis Results")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            mention_rate = (df['Weidert_Mentioned'].sum() / len(df) * 100)
+            st.metric("Weidert Mention Rate", f"{mention_rate:.1f}%")
+        
+        with col2:
+            avg_response_time = df['Response_Time'].mean()
+            st.metric("Avg Response Time", f"{avg_response_time:.1f}s")
+        
+        with col3:
+            first_position_rate = (df['Weidert_Position'] == 'First Third').sum() / len(df) * 100
+            st.metric("First Third Mentions", f"{first_position_rate:.1f}%")
+        
+        with col4:
+            positive_rate = (df['Context_Type'] == 'Positive').sum() / len(df) * 100
+            st.metric("Positive Context", f"{positive_rate:.1f}%")
+        
+        # Detailed table
+        st.subheader("📋 Detailed Results")
+        display_cols = ['Query', 'Source', 'Response', 'Response_Time', 'Weidert_Position', 'Context_Type']
+        st.dataframe(df[display_cols], use_container_width=True, height=400)
+        
+        # Download and Upload buttons
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.download_button(
+                "📥 Download Results (CSV)",
+                df.to_csv(index=False),
+                "weidert_llm_results.csv",
+                "text/csv"
+            )
+        
+        with col2:
+            if st.button("📊 Upload to Google Sheets", key="upload_to_sheets"):
+                with st.spinner("Uploading to Google Sheets..."):
+                    success, result = upload_to_google_sheets(df)
+                    
+                    if success:
+                        st.success("✅ Successfully uploaded to Google Sheets!")
+                        st.markdown(f"**[Click here to open the spreadsheet]({result})**")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ Upload failed:")
+                        st.code(result, language="text")
 
 # ─── TAB 2: VISIBILITY ANALYSIS ─────────────────────────────────────────────
 with tab2:
