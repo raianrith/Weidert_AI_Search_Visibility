@@ -492,7 +492,22 @@ Contact your admin to clear service account storage or increase quota."""
         
         # Upload the dataframe
         try:
-            new_worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+            # Convert dataframe to ensure all values are serializable
+            df_copy = df.copy()
+            
+            # Convert date columns to strings
+            for col in df_copy.columns:
+                if df_copy[col].dtype == 'object':
+                    # Convert any date/datetime objects to strings
+                    df_copy[col] = df_copy[col].apply(lambda x: str(x) if pd.notna(x) else '')
+                elif 'datetime' in str(df_copy[col].dtype) or 'date' in str(df_copy[col].dtype):
+                    df_copy[col] = df_copy[col].astype(str)
+            
+            # Prepare data for upload
+            data_to_upload = [df_copy.columns.values.tolist()] + df_copy.values.tolist()
+            
+            # Upload to Google Sheets
+            new_worksheet.update(data_to_upload)
         except Exception as e:
             return False, f"Failed to upload data: {str(e)}"
         
