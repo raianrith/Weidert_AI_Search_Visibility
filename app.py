@@ -17,6 +17,8 @@ import json
 import tempfile
 from datetime import datetime, date
 import numpy as np
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Download required NLTK data
 try:
@@ -395,6 +397,52 @@ def extract_competitors_detailed(text):
     
     return found_competitors, positions
 
+# ─── GOOGLE SHEETS INTEGRATION ─────────────────────────────────────────────
+def upload_to_google_sheets(df, sheet_name=None):
+    """Upload dataframe to Google Sheets"""
+    try:
+        # Define the scope
+        scope = ['https://spreadsheets.google.com/feeds',
+                 'https://www.googleapis.com/auth/drive']
+        
+        # Get credentials from Streamlit secrets
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        else:
+            st.error("Google Sheets credentials not found in secrets. Please configure gcp_service_account in Streamlit secrets.")
+            return False, "Missing credentials"
+        
+        # Authorize and get the client
+        client = gspread.authorize(creds)
+        
+        # Create a new spreadsheet or open existing one
+        if sheet_name is None:
+            sheet_name = f"Weidert LLM Results {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        
+        try:
+            # Try to open existing spreadsheet
+            spreadsheet = client.open(sheet_name)
+            worksheet = spreadsheet.sheet1
+        except gspread.SpreadsheetNotFound:
+            # Create new spreadsheet
+            spreadsheet = client.create(sheet_name)
+            worksheet = spreadsheet.sheet1
+        
+        # Clear existing data
+        worksheet.clear()
+        
+        # Upload the dataframe
+        worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        
+        # Get the spreadsheet URL
+        spreadsheet_url = spreadsheet.url
+        
+        return True, spreadsheet_url
+    
+    except Exception as e:
+        return False, str(e)
+
 # ─── PARALLEL PROCESSING ─────────────────────────────────────────────────────
 def get_response_with_source(source_func_tuple):
     """Helper function with error handling and timing"""
@@ -553,13 +601,27 @@ with tab1:
             display_cols = ['Query', 'Source', 'Response', 'Response_Time', 'Weidert_Position', 'Context_Type']
             st.dataframe(df[display_cols], use_container_width=True, height=400)
             
-            # Download
-            st.download_button(
-                "📥 Download Results (CSV)",
-                df.to_csv(index=False),
-                "weidert_llm_results.csv",
-                "text/csv"
-            )
+            # Download and Upload buttons
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.download_button(
+                    "📥 Download Results (CSV)",
+                    df.to_csv(index=False),
+                    "weidert_llm_results.csv",
+                    "text/csv"
+                )
+            
+            with col2:
+                if st.button("📊 Upload to Google Sheets", key="upload_to_sheets"):
+                    with st.spinner("Uploading to Google Sheets..."):
+                        success, result = upload_to_google_sheets(df)
+                        
+                        if success:
+                            st.success("✅ Successfully uploaded to Google Sheets!")
+                            st.markdown(f"**[Click here to open the spreadsheet]({result})**")
+                        else:
+                            st.error(f"❌ Upload failed: {result}")
             
         st.session_state.run_triggered = False
 
