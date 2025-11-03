@@ -237,6 +237,29 @@ st.sidebar.subheader("⚙️ Advanced Settings")
 max_workers = st.sidebar.slider("Parallel Processing Workers", 3, 12, 6)
 delay_between_requests = st.sidebar.slider("Delay Between Requests (seconds)", 0.0, 2.0, 0.1)
 
+st.sidebar.divider()
+
+st.sidebar.subheader("🔗 Google Sheets Connection")
+if st.sidebar.button("Test Google Sheets Connection"):
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        
+        if "gcp_service_account" in st.secrets:
+            scope = ['https://spreadsheets.google.com/feeds',
+                     'https://www.googleapis.com/auth/drive']
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            client = gspread.authorize(creds)
+            st.sidebar.success("✅ Connection successful!")
+            st.sidebar.caption(f"Service account: {creds_dict.get('client_email', 'N/A')}")
+        else:
+            st.sidebar.error("❌ Missing credentials in secrets.toml")
+    except ImportError:
+        st.sidebar.error("❌ Missing packages. Run:\npip install gspread google-auth")
+    except Exception as e:
+        st.sidebar.error(f"❌ Connection failed:\n{str(e)}")
+
 # ─── API CLIENTS ────────────────────────────────────────────────────────────────
 openai_key = st.secrets.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
 gemini_key = st.secrets.get("gemini_api_key") or os.getenv("GEMINI_API_KEY")
@@ -401,47 +424,65 @@ def extract_competitors_detailed(text):
 def upload_to_google_sheets(df, sheet_name=None):
     """Upload dataframe to Google Sheets"""
     try:
+        # Check if gspread is available
+        try:
+            import gspread
+            from google.oauth2.service_account import Credentials
+        except ImportError as e:
+            return False, f"Missing required packages. Please run: pip install gspread google-auth google-auth-oauthlib google-auth-httplib2\n\nError: {str(e)}"
+        
         # Define the scope
         scope = ['https://spreadsheets.google.com/feeds',
                  'https://www.googleapis.com/auth/drive']
         
         # Get credentials from Streamlit secrets
-        if "gcp_service_account" in st.secrets:
+        if "gcp_service_account" not in st.secrets:
+            return False, "Google Sheets credentials not found in secrets. Please configure gcp_service_account in .streamlit/secrets.toml"
+        
+        try:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        else:
-            st.error("Google Sheets credentials not found in secrets. Please configure gcp_service_account in Streamlit secrets.")
-            return False, "Missing credentials"
+        except Exception as e:
+            return False, f"Error loading credentials: {str(e)}"
         
         # Authorize and get the client
-        client = gspread.authorize(creds)
+        try:
+            client = gspread.authorize(creds)
+        except Exception as e:
+            return False, f"Authentication failed: {str(e)}\n\nMake sure Google Sheets API and Google Drive API are enabled in your Google Cloud project."
         
         # Create a new spreadsheet or open existing one
         if sheet_name is None:
             sheet_name = f"Weidert LLM Results {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         
         try:
-            # Try to open existing spreadsheet
-            spreadsheet = client.open(sheet_name)
-            worksheet = spreadsheet.sheet1
-        except gspread.SpreadsheetNotFound:
-            # Create new spreadsheet
+            # Try to create new spreadsheet
             spreadsheet = client.create(sheet_name)
             worksheet = spreadsheet.sheet1
-        
-        # Clear existing data
-        worksheet.clear()
+        except Exception as e:
+            return False, f"Failed to create spreadsheet: {str(e)}\n\nMake sure the service account has permission to create files."
         
         # Upload the dataframe
-        worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        try:
+            worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        except Exception as e:
+            return False, f"Failed to upload data: {str(e)}"
         
         # Get the spreadsheet URL
         spreadsheet_url = spreadsheet.url
         
+        # Make spreadsheet accessible
+        try:
+            spreadsheet.share('', perm_type='anyone', role='reader')
+        except:
+            pass  # Ignore if sharing fails
+        
         return True, spreadsheet_url
     
     except Exception as e:
-        return False, str(e)
+        import traceback
+        error_details = traceback.format_exc()
+        return False, f"Unexpected error: {str(e)}\n\nDetails:\n{error_details}"
 
 # ─── PARALLEL PROCESSING ─────────────────────────────────────────────────────
 def get_response_with_source(source_func_tuple):
@@ -614,14 +655,17 @@ with tab1:
             
             with col2:
                 if st.button("📊 Upload to Google Sheets", key="upload_to_sheets"):
+                    st.info("🔄 Starting upload process...")
                     with st.spinner("Uploading to Google Sheets..."):
                         success, result = upload_to_google_sheets(df)
                         
                         if success:
                             st.success("✅ Successfully uploaded to Google Sheets!")
                             st.markdown(f"**[Click here to open the spreadsheet]({result})**")
+                            st.balloons()
                         else:
-                            st.error(f"❌ Upload failed: {result}")
+                            st.error(f"❌ Upload failed:")
+                            st.code(result, language="text")
             
         st.session_state.run_triggered = False
 
