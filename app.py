@@ -466,25 +466,6 @@ with tab1:
             st.session_state.use_predefined = True
             st.session_state.run_triggered = True
     
-    # Query Templates Section
-    with st.expander("📋 Query Templates", expanded=False):
-        st.markdown("**Select from pre-built query templates:**")
-        
-        selected_category = st.selectbox("Choose Category:", list(QUERY_TEMPLATES.keys()))
-        
-        cols = st.columns(2)
-        for i, template in enumerate(QUERY_TEMPLATES[selected_category]):
-            col = cols[i % 2]
-            with col:
-                st.markdown(f"""
-                <div class="template-card">
-                    <div class="template-title">Query {i+1}</div>
-                    <div>{template}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button(f"Use Template {i+1}", key=f"template_{selected_category}_{i}"):
-                    st.session_state.template_query = template
-    
     # Main query input
     initial_value = st.session_state.get('template_query', '')
     queries_input = st.text_area(
