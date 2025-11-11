@@ -135,27 +135,32 @@ div.stButton > button {
 
 # ─── PREDEFINED QUERIES FOR WEIDERT GROUP ───────────────────────────────────
 PREDEFINED_QUERIES = [
-    "Best B2B marketing agencies for industrial companies -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "HubSpot implementation partners for manufacturing firms -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Inbound marketing agency for engineering companies -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "B2B marketing agency specializing in complex industrial sales -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Marketing agencies for environmental services companies -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "HubSpot partner agencies for logistics companies -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Sales and marketing alignment consulting for B2B industrial -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Industrial marketing agency with HubSpot expertise -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "B2B content marketing for technical products and services -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Marketing automation for complex B2B sales cycles -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Lead generation strategies for industrial B2B companies -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Revenue operations consulting for mid-market manufacturers -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "HubSpot CRM implementation for engineering firms -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "B2B marketing strategy for $50M-$300M industrial companies -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Inbound marketing ROI for technical B2B services -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Marketing agencies for privately held industrial businesses -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "How do Weidert Group and Stream Creative compare for B2B industrial marketing services? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Which HubSpot partner is better for manufacturing companies: Weidert Group or New Breed Revenue? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Compare marketing agencies for engineering firms: Weidert vs SmartBug Media -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
-    "Best alternative to Gorilla 76 for industrial B2B marketing services -- Provide sources where you are extracting information from in this format - 'https?://\\S+'"
+    "What industries does Weidert Group serve? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How is Weidert Group different from other HubSpot agencies? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What results has Weidert Group delivered for manufacturers? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What awards or recognitions has Weidert Group received as a HubSpot Partner? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "Who are the leading B2B growth consultancies in the Midwest? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How can marketing and sales teams align around revenue growth? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What is a B2B demand generation system? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What are examples of successful HubSpot implementations in manufacturing? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How do HubSpot Partner agencies support industrial sales teams? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What’s the best way to generate qualified leads for a manufacturing company? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "Who are the best marketing agencies in Appleton, WI? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What are the top HubSpot agencies in Wisconsin or the Midwest? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What are the top B2B marketing agencies with HubSpot accreditation? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "Who are the top HubSpot partners for industrial companies? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What does it cost to work with a HubSpot Partner Agency? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "Which HubSpot partner agencies have proven ROI for manufacturers? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How can AI tools improve content marketing and lead quality? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What is the best strategy for aligning marketing and sales in a manufacturing organization? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How does AI change demand generation for industrial companies? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What are examples of successful industrial HubSpot implementations? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How do B2B manufacturers use HubSpot for lead nurturing and automation? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How can inbound marketing reduce sales inefficiency in industrial companies? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "How do industrial brands turn technical expertise into thought leadership? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'",
+    "What kind of marketing system helps shorten long B2B sales cycles? -- Provide sources where you are extracting information from in this format - 'https?://\\S+'"
 ]
+
 
 # ─── QUERY TEMPLATES ─────────────────────────────────────────────────────────
 QUERY_TEMPLATES = {
